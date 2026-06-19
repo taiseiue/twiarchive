@@ -2,9 +2,9 @@
 
 import type { Child } from 'hono/jsx'
 import { raw } from 'hono/html'
-import { IconHome, IconLogo, IconSearch, IconUsers } from './icons.js'
+import { IconHome, IconList, IconLogo, IconSearch, IconUsers } from './icons.js'
 
-export type NavKey = 'home' | 'search' | 'users' | ''
+export type NavKey = 'home' | 'search' | 'users' | 'lists' | ''
 
 const CSS = `
   :root {
@@ -226,6 +226,11 @@ const CSS = `
     animation: spin .8s linear infinite; flex: 0 0 auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .loadmore { display: block; text-align: center; padding: 16px;
+    color: var(--accent); font-weight: 700;
+    border-bottom: 1px solid var(--border); transition: background .15s ease; }
+  .loadmore:hover { background: var(--hover-soft); }
+
   .empty { padding: 48px 24px; text-align: center; color: var(--muted); }
   .empty h3 { color: var(--text); font-size: 20px; margin: 0 0 6px; }
   .error { padding: 48px 24px; text-align: center; }
@@ -304,6 +309,10 @@ export function Layout(props: {
                 <a class={navClass('users')} href="/users">
                   <IconUsers />
                   <span>ユーザー</span>
+                </a>
+                <a class={navClass('lists')} href="/lists">
+                  <IconList />
+                  <span>リスト</span>
                 </a>
               </div>
             </nav>

@@ -1,7 +1,7 @@
 // ページ単位のコンポーネント (ホーム / 検索 / ユーザー / プロフィール / 詳細 / エラー)。
 
 import type { Child } from 'hono/jsx'
-import type { AuthorListRow, AuthorRow } from '../db.js'
+import type { AuthorListRow, AuthorRow, ListRow, ListWithCount } from '../db.js'
 import type { SyncState } from '../sync.js'
 import { Layout } from './Layout.js'
 import { TweetCard, TweetDetail, Timeline } from './Tweet.js'
@@ -10,8 +10,10 @@ import {
   IconBack,
   IconCalendar,
   IconImage,
+  IconList,
   IconRefresh,
   IconSearch,
+  IconTrash,
   IconVerified,
 } from './icons.js'
 
@@ -101,6 +103,7 @@ function RightSidebar(props: { authors: AuthorListRow[] }) {
 export function HomePage(props: {
   views: TweetView[]
   authors: AuthorListRow[]
+  nextHref?: string
 }) {
   const empty: Child = (
     <>
@@ -115,7 +118,7 @@ export function HomePage(props: {
   return (
     <Layout title="ホーム / twiarchive" active="home" right={<RightSidebar authors={props.authors} />}>
       <ColHead title="ホーム" />
-      <Timeline views={props.views} empty={empty} />
+      <Timeline views={props.views} empty={empty} nextHref={props.nextHref} />
     </Layout>
   )
 }
@@ -207,6 +210,96 @@ export function UsersPage(props: { authors: AuthorListRow[] }) {
   )
 }
 
+export function ListsPage(props: { lists: ListWithCount[] }) {
+  return (
+    <Layout title="リスト / twiarchive" active="lists">
+      <ColHead title="リスト" sub={`${props.lists.length} 件`} />
+      <form
+        method="post"
+        action="/lists"
+        style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px"
+      >
+        <input
+          class="field"
+          type="text"
+          name="name"
+          placeholder="新しいリスト名"
+          aria-label="新しいリスト名"
+          maxlength={50}
+          required
+        />
+        <button class="btn" type="submit">
+          作成
+        </button>
+      </form>
+      {props.lists.length === 0 ? (
+        <div class="empty">
+          <h3>リストがありません</h3>
+          <p>上のフォームからリストを作成できます。</p>
+        </div>
+      ) : (
+        <div>
+          {props.lists.map((l) => (
+            <div class="user-row">
+              <a
+                class="uinfo"
+                href={`/lists/${l.id}`}
+                style="display:block;min-width:0"
+              >
+                <div class="uname">
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    {l.name}
+                  </span>
+                </div>
+                <div class="ucount">{formatCount(l.member_count)} 人</div>
+              </a>
+              <form
+                method="post"
+                action={`/lists/${l.id}/delete`}
+                onsubmit="return confirm('このリストを削除しますか?')"
+              >
+                <button
+                  class="btn sm ghost"
+                  type="submit"
+                  aria-label="リストを削除"
+                >
+                  <IconTrash size={16} />
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      )}
+    </Layout>
+  )
+}
+
+export function ListTimelinePage(props: {
+  list: ListRow
+  views: TweetView[]
+  total: number
+  nextHref?: string
+}) {
+  return (
+    <Layout title={`${props.list.name} / リスト`} active="lists">
+      <ColHead
+        title={props.list.name}
+        sub={`${formatCount(props.total)} 件のポスト`}
+        back="/lists"
+      />
+      <Timeline
+        views={props.views}
+        nextHref={props.nextHref}
+        empty={
+          <p>
+            このリストにはまだ投稿がありません。メンバーのプロフィールから追加してください。
+          </p>
+        }
+      />
+    </Layout>
+  )
+}
+
 // 同期ボタン + 進捗表示。
 function SyncBar(props: { username: string; sync: SyncState }) {
   const s = props.sync
@@ -254,10 +347,60 @@ function formatJoined(joined?: string): string {
   }).format(d)
 }
 
+// プロフィール上のリスト所属トグル。各リストを add/remove のフォームボタンで切り替える。
+function ProfileLists(props: {
+  authorId: string
+  lists: ListWithCount[]
+  memberOf: number[]
+}) {
+  const member = new Set(props.memberOf)
+  return (
+    <div class="syncbar" style="gap:8px">
+      <span class="sync-status">
+        <IconList size={16} /> リスト
+      </span>
+      {props.lists.length === 0 ? (
+        <span class="muted" style="font-size:14px">
+          <a href="/lists" style="color:var(--accent)">
+            リストを作成
+          </a>
+          すると、ここから追加できます。
+        </span>
+      ) : (
+        props.lists.map((l) => {
+          const joined = member.has(l.id)
+          return (
+            <form method="post" action={`/lists/${l.id}/members`}>
+              <input type="hidden" name="author_id" value={props.authorId} />
+              <input
+                type="hidden"
+                name="action"
+                value={joined ? 'remove' : 'add'}
+              />
+              <button
+                class={joined ? 'btn sm' : 'btn sm ghost'}
+                type="submit"
+                aria-pressed={joined ? 'true' : 'false'}
+              >
+                {joined ? '✓ ' : '+ '}
+                {l.name}
+              </button>
+            </form>
+          )
+        })
+      )}
+    </div>
+  )
+}
+
 export function ProfilePage(props: {
   author: AuthorRow
   views: TweetView[]
   sync: SyncState
+  lists: ListWithCount[]
+  memberOf: number[]
+  total: number
+  nextHref?: string
 }) {
   const a = props.author
   let followers = 0
@@ -286,7 +429,7 @@ export function ProfilePage(props: {
       title={`${a.name} (@${a.screen_name})`}
       metaRefresh={props.sync.running ? 5 : undefined}
     >
-      <ColHead title={a.name} sub={`${formatCount(props.views.length)} 件のポスト`} back="/users" />
+      <ColHead title={a.name} sub={`${formatCount(props.total)} 件のポスト`} back="/users" />
       {banner ? (
         <img class="profile-banner" src={banner} alt="" />
       ) : (
@@ -321,8 +464,14 @@ export function ProfilePage(props: {
         </div>
       </div>
       <SyncBar username={a.screen_name} sync={props.sync} />
+      <ProfileLists
+        authorId={a.id}
+        lists={props.lists}
+        memberOf={props.memberOf}
+      />
       <Timeline
         views={props.views}
+        nextHref={props.nextHref}
         empty={<p>このユーザーのアーカイブはまだありません。</p>}
       />
     </Layout>

@@ -87,6 +87,8 @@ async function persistWithQuote(
   tweet: ApiTweet,
   assetsSaved: Set<string>,
 ): Promise<void> {
+  // author を欠くツイート (削除/凍結された引用元など) は保存できないので飛ばす。
+  if (!tweet?.author?.id) return
   await persistTweet(tweet, {
     skipAuthorAssets: assetsSaved.has(tweet.author.id),
   })

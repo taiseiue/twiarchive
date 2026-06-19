@@ -8,13 +8,23 @@ import { archiveTweet } from './archive.js'
 import { getSyncState, startSync } from './sync.js'
 import {
   MEDIA_DIR,
+  addListMember,
+  countByList,
+  countByUser,
+  createList,
+  deleteList,
   getAncestors,
   getAuthorByName,
+  getList,
   getReplies,
   getTweet,
   listAuthors,
+  listByList,
   listByUser,
+  listIdsForAuthor,
+  listLists,
   listTimeline,
+  removeListMember,
   searchTweets,
 } from './db.js'
 import { FxTwitterError } from './fxtwitter.js'
@@ -23,6 +33,8 @@ import {
   DetailPage,
   ErrorPage,
   HomePage,
+  ListsPage,
+  ListTimelinePage,
   ProfilePage,
   ProfileSyncPrompt,
   SearchPage,
@@ -37,11 +49,21 @@ const RESERVED = new Set([
   'go',
   'search',
   'users',
+  'lists',
   'favicon.ico',
   'robots.txt',
 ])
 const SCREEN_NAME_RE = /^[A-Za-z0-9_]{1,15}$/
 const TWEET_ID_RE = /^\d+$/
+
+// タイムライン系の 1 ページあたりの表示件数。
+const PAGE_SIZE = 50
+
+// ?offset= を 0 以上の整数として読む。不正値は 0。
+function parseOffset(c: { req: { query: (k: string) => string | undefined } }): number {
+  const n = Number(c.req.query('offset'))
+  return Number.isInteger(n) && n > 0 ? n : 0
+}
 
 const CONTENT_TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -127,8 +149,14 @@ app.get('/media/*', (c) => {
 
 // ---- ホーム (全体タイムライン) ----
 app.get('/', (c) => {
-  const views = loadTimelineViews(listTimeline({ limit: 100 }))
-  return c.html(<HomePage views={views} authors={listAuthors()} />)
+  const offset = parseOffset(c)
+  const rows = listTimeline({ limit: PAGE_SIZE + 1, offset })
+  const hasNext = rows.length > PAGE_SIZE
+  const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
+  const nextHref = hasNext ? `/?offset=${offset + PAGE_SIZE}` : undefined
+  return c.html(
+    <HomePage views={views} authors={listAuthors()} nextHref={nextHref} />,
+  )
 })
 
 // ---- 検索 / メディア絞り込み ----
@@ -162,6 +190,60 @@ app.get('/search', (c) => {
 // ---- ユーザー一覧 ----
 app.get('/users', (c) => {
   return c.html(<UsersPage authors={listAuthors()} />)
+})
+
+// ---- ユーザーリスト ----
+app.get('/lists', (c) => {
+  return c.html(<ListsPage lists={listLists()} />)
+})
+
+app.post('/lists', async (c) => {
+  const body = await c.req.parseBody()
+  const name = String(body['name'] ?? '').trim()
+  if (name) createList(name.slice(0, 50))
+  return c.redirect('/lists')
+})
+
+app.get('/lists/:id', (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const list = getList(Number(id))
+  if (!list) return c.notFound()
+  const offset = parseOffset(c)
+  const rows = listByList(list.id, { limit: PAGE_SIZE + 1, offset })
+  const hasNext = rows.length > PAGE_SIZE
+  const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
+  const nextHref = hasNext
+    ? `/lists/${list.id}?offset=${offset + PAGE_SIZE}`
+    : undefined
+  return c.html(
+    <ListTimelinePage
+      list={list}
+      views={views}
+      total={countByList(list.id)}
+      nextHref={nextHref}
+    />,
+  )
+})
+
+app.post('/lists/:id/delete', (c) => {
+  const id = c.req.param('id')
+  if (/^\d+$/.test(id)) deleteList(Number(id))
+  return c.redirect('/lists')
+})
+
+app.post('/lists/:id/members', async (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const listId = Number(id)
+  const body = await c.req.parseBody()
+  const authorId = String(body['author_id'] ?? '')
+  const action = body['action']
+  if (authorId) {
+    if (action === 'remove') removeListMember(listId, authorId)
+    else addListMember(listId, authorId)
+  }
+  return c.redirect(c.req.header('Referer') ?? `/lists/${listId}`)
 })
 
 // ---- URL 貼り付け → 該当パスへリダイレクト ----
@@ -233,8 +315,24 @@ app.get('/:username', (c) => {
     if (!sync.running) c.status(404)
     return c.html(<ProfileSyncPrompt username={username} sync={sync} />)
   }
-  const views = loadTimelineViews(listByUser(username, { limit: 500 }))
-  return c.html(<ProfilePage author={author} views={views} sync={sync} />)
+  const offset = parseOffset(c)
+  const rows = listByUser(username, { limit: PAGE_SIZE + 1, offset })
+  const hasNext = rows.length > PAGE_SIZE
+  const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
+  const nextHref = hasNext
+    ? `/${author.screen_name}?offset=${offset + PAGE_SIZE}`
+    : undefined
+  return c.html(
+    <ProfilePage
+      author={author}
+      views={views}
+      sync={sync}
+      lists={listLists()}
+      memberOf={listIdsForAuthor(author.id)}
+      total={countByUser(author.screen_name)}
+      nextHref={nextHref}
+    />,
+  )
 })
 
 const port = Number(process.env.PORT ?? 3000)

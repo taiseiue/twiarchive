@@ -197,8 +197,12 @@ export function TweetDetail(props: { view: TweetView }) {
   )
 }
 
-/** ツイート配列をタイムラインとして描画。 */
-export function Timeline(props: { views: TweetView[]; empty?: Child }) {
+/** ツイート配列をタイムラインとして描画。nextHref があれば「もっと見る」を表示。 */
+export function Timeline(props: {
+  views: TweetView[]
+  empty?: Child
+  nextHref?: string
+}) {
   if (props.views.length === 0) {
     return (
       <div class="empty">
@@ -211,6 +215,11 @@ export function Timeline(props: { views: TweetView[]; empty?: Child }) {
       {props.views.map((v) => (
         <TweetCard view={v} />
       ))}
+      {props.nextHref ? (
+        <a class="loadmore" href={props.nextHref}>
+          もっと見る
+        </a>
+      ) : null}
     </div>
   )
 }

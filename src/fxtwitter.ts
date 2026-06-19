@@ -238,7 +238,8 @@ function normalizeStatus(raw: Record<string, unknown>): ApiTweet {
       0,
     replying_to: replyingTo,
     replying_to_status: replyingToStatus,
-    quote: raw.quote
+    // 引用元が削除/凍結/非公開などで author を欠く場合があるので検証してから正規化する。
+    quote: isValidStatus(raw.quote as Record<string, unknown>)
       ? normalizeStatus(raw.quote as Record<string, unknown>)
       : null,
   }

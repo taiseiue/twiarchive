@@ -65,11 +65,30 @@ export function IconUsers(props: IconProps) {
   )
 }
 
+export function IconList(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M8 6h13M8 12h13M8 18h13" />
+      <path d="M3 6h.01M3 12h.01M3 18h.01" />
+    </Stroke>
+  )
+}
+
 export function IconBack(props: IconProps) {
   return (
     <Stroke {...props}>
       <path d="m12 19-7-7 7-7" />
       <path d="M19 12H5" />
+    </Stroke>
+  )
+}
+
+export function IconTrash(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M10 11v6M14 11v6" />
     </Stroke>
   )
 }

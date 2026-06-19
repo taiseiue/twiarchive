@@ -75,6 +75,22 @@ db.exec(`
   CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5 (
     tweet_id UNINDEXED, text, screen_name, name
   );
+
+  CREATE TABLE IF NOT EXISTS lists (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS list_members (
+    list_id    INTEGER NOT NULL,
+    author_id  TEXT NOT NULL,
+    added_at   INTEGER NOT NULL,
+    PRIMARY KEY (list_id, author_id),
+    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE,
+    FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_list_members_author ON list_members (author_id);
 `)
 
 // ---- 行の型 ----
@@ -200,6 +216,21 @@ const insertFtsStmt = db.prepare(`
   INSERT INTO tweets_fts (tweet_id, text, screen_name, name)
   VALUES (:tweet_id, :text, :screen_name, :name)
 `)
+
+const createListStmt = db.prepare(
+  `INSERT INTO lists (name, created_at) VALUES (?, ?)`,
+)
+const deleteListStmt = db.prepare(`DELETE FROM lists WHERE id = ?`)
+const getListStmt = db.prepare(`SELECT * FROM lists WHERE id = ?`)
+const addListMemberStmt = db.prepare(
+  `INSERT OR IGNORE INTO list_members (list_id, author_id, added_at) VALUES (?, ?, ?)`,
+)
+const removeListMemberStmt = db.prepare(
+  `DELETE FROM list_members WHERE list_id = ? AND author_id = ?`,
+)
+const listIdsForAuthorStmt = db.prepare(
+  `SELECT list_id FROM list_members WHERE author_id = ?`,
+)
 
 // ---- 書き込みヘルパ ----
 
@@ -341,6 +372,16 @@ export function listByUser(
   ) as unknown as TweetRow[]
 }
 
+/** ユーザー別のアーカイブ済みツイート総数。 */
+export function countByUser(screenName: string): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM tweets WHERE screen_name = ? COLLATE NOCASE`,
+    )
+    .get(screenName) as { c: number }
+  return row.c
+}
+
 /** FTS5 全文検索。ユーザー入力は安全な MATCH 文字列へ変換する。 */
 export function searchTweets(
   query: string,
@@ -370,4 +411,87 @@ function toFtsMatch(query: string): string {
     .filter(Boolean)
     .map((tok) => `"${tok.replace(/"/g, '""')}"*`)
   return tokens.join(' ')
+}
+
+// ---- ユーザーリスト ----
+
+export interface ListRow {
+  id: number
+  name: string
+  created_at: number
+}
+
+export interface ListWithCount extends ListRow {
+  member_count: number
+}
+
+/** リストを作成し、新しい id を返す。 */
+export function createList(name: string): number {
+  const info = createListStmt.run(name, Date.now())
+  return Number(info.lastInsertRowid)
+}
+
+/** リストを削除する (CASCADE でメンバー行も消える)。 */
+export function deleteList(id: number): void {
+  deleteListStmt.run(id)
+}
+
+export function getList(id: number): ListRow | undefined {
+  return getListStmt.get(id) as ListRow | undefined
+}
+
+/** 全リストをメンバー数つきで返す。新しい順。 */
+export function listLists(): ListWithCount[] {
+  const stmt = db.prepare(`
+    SELECT l.*,
+      (SELECT COUNT(*) FROM list_members m WHERE m.list_id = l.id) AS member_count
+    FROM lists l
+    ORDER BY l.created_at DESC
+  `)
+  return stmt.all() as unknown as ListWithCount[]
+}
+
+export function addListMember(listId: number, authorId: string): void {
+  addListMemberStmt.run(listId, authorId, Date.now())
+}
+
+export function removeListMember(listId: number, authorId: string): void {
+  removeListMemberStmt.run(listId, authorId)
+}
+
+/** あるユーザーが所属するリスト id の一覧。 */
+export function listIdsForAuthor(authorId: string): number[] {
+  const rows = listIdsForAuthorStmt.all(authorId) as unknown as {
+    list_id: number
+  }[]
+  return rows.map((r) => r.list_id)
+}
+
+/** リスト別タイムライン。メンバーのツイートを新しい順で返す。 */
+export function listByList(
+  listId: number,
+  opts: { limit?: number; offset?: number } = {},
+): TweetRow[] {
+  const stmt = db.prepare(`
+    SELECT t.* FROM tweets t
+    WHERE t.author_id IN (SELECT author_id FROM list_members WHERE list_id = ?)
+    ORDER BY t.created_timestamp DESC, t.archived_at DESC
+    LIMIT ? OFFSET ?
+  `)
+  return stmt.all(
+    listId,
+    opts.limit ?? 50,
+    opts.offset ?? 0,
+  ) as unknown as TweetRow[]
+}
+
+/** リストのメンバーによるアーカイブ済みツイート総数。 */
+export function countByList(listId: number): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM tweets
+       WHERE author_id IN (SELECT author_id FROM list_members WHERE list_id = ?)`,
+    )
+    .get(listId) as { c: number }
+  return row.c
 }

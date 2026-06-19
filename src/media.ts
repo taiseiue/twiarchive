@@ -16,11 +16,32 @@ import type { MediaInsert } from './db.js'
 const USER_AGENT =
   'twiarchive/1.0 (+https://github.com/taiseiue/twiarchive)'
 
+/** pbs.twimg.com の画像URLをオリジナル解像度 (name=orig) に正規化する。 */
+function toOrigImageUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.hostname !== 'pbs.twimg.com') return url
+    // 拡張子付き形式 (…/media/ID.jpg) を format+name 形式へ変換する。
+    const m = u.pathname.match(/^(.*)\.([a-zA-Z0-9]+)$/)
+    if (m) {
+      u.pathname = m[1]
+      u.searchParams.set('format', m[2])
+    }
+    u.searchParams.set('name', 'orig')
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 /** URL から拡張子を推定する。取れなければ fallback を使う。 */
 function extFromUrl(url: string, fallback: string): string {
   try {
-    const pathname = new URL(url).pathname
-    const m = pathname.match(/\.([a-zA-Z0-9]{1,5})$/)
+    const u = new URL(url)
+    // pbs.twimg.com の name=orig 形式は拡張子が format クエリに入る。
+    const fmt = u.searchParams.get('format')
+    if (fmt && /^[a-zA-Z0-9]{1,5}$/.test(fmt)) return fmt.toLowerCase()
+    const m = u.pathname.match(/\.([a-zA-Z0-9]{1,5})$/)
     if (m) return m[1].toLowerCase()
   } catch {
     /* ignore */
@@ -47,7 +68,19 @@ async function downloadTo(url: string, relPath: string): Promise<boolean> {
   }
 }
 
-/** 動画 variants から mp4 の最高ビットレートを選ぶ。 */
+/** variant URL から解像度 (幅×高さの画素数) を推定する。例: /vid/1280x720/ */
+function variantPixels(url: string): number {
+  const m = url.match(/\/(\d+)x(\d+)\//)
+  if (!m) return 0
+  return Number(m[1]) * Number(m[2])
+}
+
+/** variant の「画質スコア」。bitrate を優先し、無ければ解像度で代替する。 */
+function variantScore(v: ApiVideoVariant): number {
+  return v.bitrate ?? variantPixels(v.url)
+}
+
+/** 動画 variants から mp4 の最高画質のものを1つ選ぶ。 */
 function pickBestVideoVariant(
   video: ApiVideo,
 ): ApiVideoVariant | undefined {
@@ -56,7 +89,7 @@ function pickBestVideoVariant(
   )
   if (mp4.length === 0) return undefined
   return mp4.reduce((best, v) =>
-    (v.bitrate ?? 0) > (best.bitrate ?? 0) ? v : best,
+    variantScore(v) > variantScore(best) ? v : best,
   )
 }
 
@@ -110,9 +143,10 @@ export async function saveTweetMedia(tweet: ApiTweet): Promise<MediaInsert[]> {
         alt_text: null,
       })
     } else {
-      const ext = extFromUrl(item.url, 'jpg')
+      const sourceUrl = toOrigImageUrl(item.url)
+      const ext = extFromUrl(sourceUrl, 'jpg')
       const relPath = `${tweet.id}/${mediaId}.${ext}`
-      const ok = await downloadTo(item.url, relPath)
+      const ok = await downloadTo(sourceUrl, relPath)
       if (!ok) {
         ord++
         continue
@@ -122,7 +156,7 @@ export async function saveTweetMedia(tweet: ApiTweet): Promise<MediaInsert[]> {
         ord,
         type: 'photo',
         local_path: relPath,
-        source_url: item.url,
+        source_url: sourceUrl,
         thumbnail_path: null,
         width: item.width ?? null,
         height: item.height ?? null,
