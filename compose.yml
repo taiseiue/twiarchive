@@ -9,6 +9,9 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
+      DATA_DIR: /app/data
+    volumes:
+      - twiarchive-data:/app/data
     healthcheck:
       test:
         - CMD
@@ -19,3 +22,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  twiarchive-data:

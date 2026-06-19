@@ -36,6 +36,11 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 
+# データ用ディレクトリを node 所有で用意しておく。
+# 空の名前付きボリュームは初回マウント時にこの所有者を引き継ぐため、
+# 非 root 実行でも /app/data 配下に書き込める。
+RUN mkdir -p /app/data && chown -R node:node /app/data
+
 # 非 root ユーザーで実行
 USER node
 

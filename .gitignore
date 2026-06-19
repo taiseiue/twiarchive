@@ -1,3 +1,6 @@
+# twiarchive: SQLite DB と保存メディア
+data/
+
 # Logs
 logs
 *.log
