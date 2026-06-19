@@ -211,6 +211,21 @@ const CSS = `
     font-size: 14px; }
   .profile-stats b { color: var(--text); }
 
+  /* 同期バー */
+  .syncbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .syncbar form { display: flex; gap: 8px; }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn.ghost:hover { background: var(--hover); }
+  .btn.sm { padding: 7px 16px; font-size: 14px; }
+  .sync-status { color: var(--muted); font-size: 14px;
+    display: inline-flex; align-items: center; gap: 8px; }
+  .sync-status.err { color: #f4212e; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 9999px;
+    animation: spin .8s linear infinite; flex: 0 0 auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   .empty { padding: 48px 24px; text-align: center; color: var(--muted); }
   .empty h3 { color: var(--text); font-size: 20px; margin: 0 0 6px; }
   .error { padding: 48px 24px; text-align: center; }
@@ -252,6 +267,8 @@ export function Layout(props: {
   title: string
   active?: NavKey
   right?: Child
+  /** 指定秒ごとにページを自動リロード (同期の進捗表示用)。 */
+  metaRefresh?: number
   children?: Child
 }) {
   const active = props.active ?? ''
@@ -263,6 +280,9 @@ export function Layout(props: {
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
+          {props.metaRefresh ? (
+            <meta http-equiv="refresh" content={String(props.metaRefresh)} />
+          ) : null}
           <title>{props.title}</title>
           <style dangerouslySetInnerHTML={{ __html: CSS }} />
         </head>

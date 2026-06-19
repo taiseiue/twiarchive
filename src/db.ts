@@ -278,6 +278,31 @@ export function getMedia(tweetId: string): MediaRow[] {
   return getMediaStmt.all(tweetId) as unknown as MediaRow[]
 }
 
+/** このツイートへの (アーカイブ済み) 直接の返信。古い順。 */
+export function getReplies(tweetId: string): TweetRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM tweets WHERE replying_to_id = ?
+       ORDER BY created_timestamp ASC, archived_at ASC`,
+    )
+    .all(tweetId) as unknown as TweetRow[]
+}
+
+/** このツイートの先祖 (親チェーン) を根に近い順で返す。 */
+export function getAncestors(tweetId: string): TweetRow[] {
+  const chain: TweetRow[] = []
+  const seen = new Set<string>([tweetId])
+  let cur = getTweet(tweetId)
+  while (cur?.replying_to_id && !seen.has(cur.replying_to_id)) {
+    seen.add(cur.replying_to_id)
+    const parent = getTweet(cur.replying_to_id)
+    if (!parent) break
+    chain.unshift(parent)
+    cur = parent
+  }
+  return chain
+}
+
 /** 全体タイムライン / メディア絞り込み。新しい順。 */
 export function listTimeline(opts: {
   mediaOnly?: boolean

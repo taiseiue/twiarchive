@@ -85,12 +85,6 @@ export interface ApiTweet {
   replying_to_status?: string | null
 }
 
-export interface ApiResponse {
-  code: number
-  message: string
-  tweet?: ApiTweet | null
-}
-
 export class FxTwitterError extends Error {
   constructor(
     message: string,
@@ -101,22 +95,41 @@ export class FxTwitterError extends Error {
   }
 }
 
+export interface ProfileFeedPage {
+  /** このページのツイート (ApiTweet へ正規化済み)。 */
+  results: ApiTweet[]
+  /** 次の (より古い) ページを取得するためのカーソル。末尾なら null。 */
+  cursor: string | null
+}
+
+interface ProfileStatusesResponse {
+  code: number
+  message?: string
+  results?: Array<Record<string, unknown> & { reposts?: number }>
+  cursor?: { top?: string; bottom?: string }
+}
+
 /**
- * fxtwitter からツイートを取得する。
- * 取得できない場合 (404 など) は FxTwitterError を投げる。
+ * プロフィールのタイムライン 1 ページを取得する。
+ * フィードの項目は単発エンドポイントと少し形が違う (retweets ではなく reposts、
+ * quote / replying_to_status を含まない) ので ApiTweet へ正規化する。
  */
-export async function fetchTweet(
+export async function fetchProfileStatuses(
   screenName: string,
-  id: string,
-): Promise<ApiTweet> {
-  const url = `${API_BASE}/${encodeURIComponent(screenName)}/status/${encodeURIComponent(id)}`
+  cursor?: string,
+): Promise<ProfileFeedPage> {
+  const url = new URL(
+    `${API_BASE}/2/profile/${encodeURIComponent(screenName)}/statuses`,
+  )
+  if (cursor) url.searchParams.set('cursor', cursor)
+
   const res = await fetch(url, {
     headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
   })
 
-  let body: ApiResponse | null = null
+  let body: ProfileStatusesResponse | null = null
   try {
-    body = (await res.json()) as ApiResponse
+    body = (await res.json()) as ProfileStatusesResponse
   } catch {
     throw new FxTwitterError(
       `Invalid JSON response (HTTP ${res.status})`,
@@ -124,12 +137,109 @@ export async function fetchTweet(
     )
   }
 
-  if (!body || body.code !== 200 || !body.tweet) {
+  if (!body || body.code !== 200 || !Array.isArray(body.results)) {
     throw new FxTwitterError(
       body?.message ?? `HTTP ${res.status}`,
       body?.code ?? res.status,
     )
   }
 
-  return body.tweet
+  const results = body.results.filter(isValidStatus).map(normalizeStatus)
+
+  return { results, cursor: body.cursor?.bottom ?? null }
+}
+
+export interface ConversationResult {
+  /** 起点となるツイート。 */
+  main: ApiTweet
+  /** 先祖 (親チェーン) + 起点ツイートのスレッド。 */
+  thread: ApiTweet[]
+  /** 起点ツイートへの返信群 (このページ分)。 */
+  replies: ApiTweet[]
+  /** さらに返信を取得するためのカーソル。末尾/無しなら null。 */
+  cursor: string | null
+}
+
+interface ConversationResponse {
+  code: number
+  message?: string
+  status?: Record<string, unknown> | null
+  thread?: Array<Record<string, unknown>>
+  replies?: Array<Record<string, unknown>> | null
+  cursor?: { top?: string; bottom?: string }
+}
+
+/**
+ * 会話 (/2/conversation/:id) を取得する。1 回で本体・スレッド・返信をまとめて返す。
+ * 返信はカーソルでページングできる。
+ */
+export async function fetchConversation(
+  id: string,
+  cursor?: string,
+): Promise<ConversationResult> {
+  const url = new URL(`${API_BASE}/2/conversation/${encodeURIComponent(id)}`)
+  if (cursor) url.searchParams.set('cursor', cursor)
+
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+  })
+
+  let body: ConversationResponse | null = null
+  try {
+    body = (await res.json()) as ConversationResponse
+  } catch {
+    throw new FxTwitterError(
+      `Invalid JSON response (HTTP ${res.status})`,
+      res.status,
+    )
+  }
+
+  if (!body || body.code !== 200 || !body.status) {
+    throw new FxTwitterError(
+      body?.message ?? `HTTP ${res.status}`,
+      body?.code ?? res.status,
+    )
+  }
+
+  return {
+    main: normalizeStatus(body.status),
+    thread: (body.thread ?? []).filter(isValidStatus).map(normalizeStatus),
+    replies: (body.replies ?? []).filter(isValidStatus).map(normalizeStatus),
+    cursor: body.cursor?.bottom ?? null,
+  }
+}
+
+function isValidStatus(r: Record<string, unknown> | null | undefined): boolean {
+  return !!r && typeof r.id === 'string' && !!r.author
+}
+
+/**
+ * /2/ 系 (conversation / profile statuses) の status を ApiTweet へ正規化する。
+ * - reposts -> retweets
+ * - replying_to がオブジェクト ({screen_name, status}) の場合は分解
+ * - quote を再帰的に正規化
+ */
+function normalizeStatus(raw: Record<string, unknown>): ApiTweet {
+  let replyingTo: string | null = null
+  let replyingToStatus: string | null = null
+  const rt = raw.replying_to
+  if (rt && typeof rt === 'object') {
+    const o = rt as { screen_name?: string; status?: string }
+    replyingTo = o.screen_name ?? null
+    replyingToStatus = o.status ?? null
+  } else if (typeof rt === 'string') {
+    replyingTo = rt
+  }
+  return {
+    ...(raw as unknown as ApiTweet),
+    retweets:
+      (raw as { reposts?: number }).reposts ??
+      (raw as { retweets?: number }).retweets ??
+      0,
+    replying_to: replyingTo,
+    replying_to_status: replyingToStatus,
+    quote: raw.quote
+      ? normalizeStatus(raw.quote as Record<string, unknown>)
+      : null,
+  }
 }

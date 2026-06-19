@@ -2,6 +2,7 @@
 
 import type { Child } from 'hono/jsx'
 import type { AuthorListRow, AuthorRow } from '../db.js'
+import type { SyncState } from '../sync.js'
 import { Layout } from './Layout.js'
 import { TweetCard, TweetDetail, Timeline } from './Tweet.js'
 import { avatarSrc, formatCount, mediaUrl, type TweetView } from './model.js'
@@ -206,6 +207,42 @@ export function UsersPage(props: { authors: AuthorListRow[] }) {
   )
 }
 
+// 同期ボタン + 進捗表示。
+function SyncBar(props: { username: string; sync: SyncState }) {
+  const s = props.sync
+  if (s.running) {
+    return (
+      <div class="syncbar">
+        <span class="sync-status">
+          <span class="spinner" />
+          同期中… {formatCount(s.added)} 件取得 ({s.pages} ページ)
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div class="syncbar">
+      <form method="post" action={`/${props.username}/sync`}>
+        <button class="btn sm" type="submit" name="refresh" value="">
+          <IconRefresh size={16} /> <span style="margin-left:6px">同期</span>
+        </button>
+        <button class="btn sm ghost" type="submit" name="refresh" value="1">
+          全再取得
+        </button>
+      </form>
+      {s.finishedAt ? (
+        s.error ? (
+          <span class="sync-status err">同期に失敗しました: {s.error}</span>
+        ) : (
+          <span class="sync-status">前回の同期: +{formatCount(s.added)} 件</span>
+        )
+      ) : (
+        <span class="sync-status">最新のポストをまとめて取得します</span>
+      )}
+    </div>
+  )
+}
+
 function formatJoined(joined?: string): string {
   if (!joined) return ''
   const d = new Date(joined)
@@ -217,7 +254,11 @@ function formatJoined(joined?: string): string {
   }).format(d)
 }
 
-export function ProfilePage(props: { author: AuthorRow; views: TweetView[] }) {
+export function ProfilePage(props: {
+  author: AuthorRow
+  views: TweetView[]
+  sync: SyncState
+}) {
   const a = props.author
   let followers = 0
   let following = 0
@@ -241,7 +282,10 @@ export function ProfilePage(props: { author: AuthorRow; views: TweetView[] }) {
   const avatar = mediaUrl(a.avatar_path) ?? a.avatar_url ?? ''
   const joinedText = formatJoined(joined)
   return (
-    <Layout title={`${a.name} (@${a.screen_name})`}>
+    <Layout
+      title={`${a.name} (@${a.screen_name})`}
+      metaRefresh={props.sync.running ? 5 : undefined}
+    >
       <ColHead title={a.name} sub={`${formatCount(props.views.length)} 件のポスト`} back="/users" />
       {banner ? (
         <img class="profile-banner" src={banner} alt="" />
@@ -276,6 +320,7 @@ export function ProfilePage(props: { author: AuthorRow; views: TweetView[] }) {
           </span>
         </div>
       </div>
+      <SyncBar username={a.screen_name} sync={props.sync} />
       <Timeline
         views={props.views}
         empty={<p>このユーザーのアーカイブはまだありません。</p>}
@@ -284,12 +329,60 @@ export function ProfilePage(props: { author: AuthorRow; views: TweetView[] }) {
   )
 }
 
-export function DetailPage(props: { view: TweetView }) {
+// まだアーカイブされていないユーザー向けの同期開始ページ。
+export function ProfileSyncPrompt(props: {
+  username: string
+  sync: SyncState
+}) {
+  const s = props.sync
+  return (
+    <Layout
+      title={`@${props.username}`}
+      metaRefresh={s.running ? 5 : undefined}
+    >
+      <ColHead title={`@${props.username}`} back="/users" />
+      <div class="empty">
+        <h3>@{props.username} はまだアーカイブされていません</h3>
+        <p>このユーザーのポストをまとめて取得できます。</p>
+        {s.running ? (
+          <p class="sync-status" style="justify-content:center">
+            <span class="spinner" />
+            同期中… {formatCount(s.added)} 件取得 ({s.pages} ページ)
+          </p>
+        ) : (
+          <form
+            method="post"
+            action={`/${props.username}/sync`}
+            style="margin-top:14px"
+          >
+            <button class="btn" type="submit" name="refresh" value="">
+              同期を開始
+            </button>
+          </form>
+        )}
+        {!s.running && s.error ? (
+          <p class="sync-status err" style="justify-content:center">
+            {s.error}
+          </p>
+        ) : null}
+      </div>
+    </Layout>
+  )
+}
+
+export function DetailPage(props: {
+  view: TweetView
+  ancestors: TweetView[]
+  replies: TweetView[]
+}) {
   const v = props.view
   const title = `${v.name} (@${v.screenName}): ${v.text.slice(0, 60)}`
   return (
     <Layout title={title}>
       <ColHead title="ポスト" back="/" />
+      {props.ancestors.map((a) => (
+        <TweetCard view={a} />
+      ))}
       <TweetDetail view={v} />
       <div
         style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:16px;font-size:14px"
@@ -304,6 +397,16 @@ export function DetailPage(props: { view: TweetView }) {
           @{v.screenName} の一覧
         </a>
       </div>
+      {props.replies.length > 0 ? (
+        <>
+          <div class="colhead" style="position:static;min-height:auto;padding:12px 16px">
+            <h2 style="font-size:17px">返信 {props.replies.length} 件</h2>
+          </div>
+          {props.replies.map((r) => (
+            <TweetCard view={r} />
+          ))}
+        </>
+      ) : null}
     </Layout>
   )
 }

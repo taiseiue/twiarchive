@@ -5,9 +5,12 @@ import { join, normalize, sep } from 'node:path'
 import { Readable } from 'node:stream'
 
 import { archiveTweet } from './archive.js'
+import { getSyncState, startSync } from './sync.js'
 import {
   MEDIA_DIR,
+  getAncestors,
   getAuthorByName,
+  getReplies,
   getTweet,
   listAuthors,
   listByUser,
@@ -21,6 +24,7 @@ import {
   ErrorPage,
   HomePage,
   ProfilePage,
+  ProfileSyncPrompt,
   SearchPage,
   UsersPage,
 } from './views/pages.js'
@@ -185,7 +189,11 @@ app.get('/:username/status/:id', async (c) => {
       row = await archiveTweet(username, id, { refresh })
     }
     const view = loadTweetView(row)
-    return c.html(<DetailPage view={view} />)
+    const ancestors = loadTimelineViews(getAncestors(id))
+    const replies = loadTimelineViews(getReplies(id))
+    return c.html(
+      <DetailPage view={view} ancestors={ancestors} replies={replies} />,
+    )
   } catch (err) {
     const message =
       err instanceof FxTwitterError
@@ -200,21 +208,33 @@ app.get('/:username/status/:id', async (c) => {
   }
 })
 
-// ---- ユーザー別ページ ----
+// ---- プロフィールの同期を開始 (バックグラウンド) ----
+app.post('/:username/sync', async (c) => {
+  const username = c.req.param('username')
+  if (RESERVED.has(username) || !SCREEN_NAME_RE.test(username)) {
+    return c.notFound()
+  }
+  const body = await c.req.parseBody()
+  const refresh = body['refresh'] === '1'
+  startSync(username, refresh)
+  return c.redirect(`/${username}`)
+})
+
+// ---- ユーザー別ページ (同期はボタンから手動で開始) ----
 app.get('/:username', (c) => {
   const username = c.req.param('username')
   if (RESERVED.has(username) || !SCREEN_NAME_RE.test(username)) {
     return c.notFound()
   }
+  const sync = getSyncState(username)
   const author = getAuthorByName(username)
   if (!author) {
-    c.status(404)
-    return c.html(
-      <ErrorPage message={`@${username} のアーカイブはまだありません。`} />,
-    )
+    // 未アーカイブ: 同期を促すページ (同期中なら自動リロードで待つ)。
+    if (!sync.running) c.status(404)
+    return c.html(<ProfileSyncPrompt username={username} sync={sync} />)
   }
-  const views = loadTimelineViews(listByUser(username, { limit: 100 }))
-  return c.html(<ProfilePage author={author} views={views} />)
+  const views = loadTimelineViews(listByUser(username, { limit: 500 }))
+  return c.html(<ProfilePage author={author} views={views} sync={sync} />)
 })
 
 const port = Number(process.env.PORT ?? 3000)
