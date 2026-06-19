@@ -289,16 +289,18 @@ export interface AuthorListRow extends AuthorRow {
   tweet_count: number
 }
 
-/** アーカイブ済み著者の一覧。ツイート数の多い順。 */
-export function listAuthors(limit = 100): AuthorListRow[] {
+/** アーカイブ済み著者の一覧。ツイート数の多い順。limit 未指定なら全件。 */
+export function listAuthors(limit?: number): AuthorListRow[] {
   const stmt = db.prepare(`
     SELECT a.*,
       (SELECT COUNT(*) FROM tweets t WHERE t.author_id = a.id) AS tweet_count
     FROM authors a
     ORDER BY tweet_count DESC, a.updated_at DESC
-    LIMIT ?
+    ${limit != null ? 'LIMIT ?' : ''}
   `)
-  return stmt.all(limit) as unknown as AuthorListRow[]
+  return (limit != null
+    ? stmt.all(limit)
+    : stmt.all()) as unknown as AuthorListRow[]
 }
 
 export function getTweet(id: string): TweetRow | undefined {
