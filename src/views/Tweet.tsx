@@ -1,7 +1,7 @@
 // ツイート表示コンポーネント群 (カード / メディアグリッド / 引用 / アクションバー)。
 
 import type { Child } from 'hono/jsx'
-import type { MediaRow } from '../db.js'
+import type { BookmarkListWithCount, MediaRow } from '../db.js'
 import {
   avatarSrc,
   formatCount,
@@ -12,6 +12,7 @@ import {
   type TweetView,
 } from './model.js'
 import {
+  IconBookmark,
   IconLike,
   IconReply,
   IconRetweet,
@@ -85,26 +86,82 @@ function MetaLine(props: { view: TweetView; withTime?: boolean }) {
   )
 }
 
-function ActionsBar(props: { view: TweetView }) {
+// ツイートのブックマークボタン。押すとリスト一覧のドロップダウンが開き、
+// 各リストへの保存/解除を <details>+フォームで切り替える (JS 不要)。
+// 送信後は Referer へ戻るので、開いていたページがそのまま再描画される。
+function BookmarkMenu(props: {
+  view: TweetView
+  lists: BookmarkListWithCount[]
+}) {
+  const v = props.view
+  const member = new Set(v.bookmarkedIn)
+  const saved = member.size > 0
+  return (
+    <details class={`bmmenu${saved ? ' is-saved' : ''}`}>
+      <summary class="act bm" aria-label="ブックマーク">
+        <IconBookmark size={18} filled={saved} />
+      </summary>
+      <div class="bmmenu-list" role="menu">
+        <div class="bmmenu-head">ブックマークに保存</div>
+        {props.lists.length === 0 ? (
+          <a class="bmmenu-empty" href="/bookmarks">
+            ブックマークリストを作成
+          </a>
+        ) : (
+          props.lists.map((l) => {
+            const inList = member.has(l.id)
+            return (
+              <form method="post" action={`/bookmarks/${l.id}/tweets`}>
+                <input type="hidden" name="tweet_id" value={v.id} />
+                <input
+                  type="hidden"
+                  name="action"
+                  value={inList ? 'remove' : 'add'}
+                />
+                <button
+                  class={`bmmenu-item${inList ? ' active' : ''}`}
+                  type="submit"
+                  role="menuitemcheckbox"
+                  aria-checked={inList ? 'true' : 'false'}
+                >
+                  <span class="bmmenu-name">{l.name}</span>
+                  <span class="bmmenu-check" aria-hidden="true">
+                    ✓
+                  </span>
+                </button>
+              </form>
+            )
+          })
+        )}
+      </div>
+    </details>
+  )
+}
+
+function ActionsBar(props: {
+  view: TweetView
+  bookmarkLists: BookmarkListWithCount[]
+}) {
   const v = props.view
   return (
-    <div class="actions-bar" aria-hidden="true">
-      <span class="act reply">
+    <div class="actions-bar">
+      <span class="act reply" aria-hidden="true">
         <IconReply />
         {formatCount(v.replies)}
       </span>
-      <span class="act rt">
+      <span class="act rt" aria-hidden="true">
         <IconRetweet />
         {formatCount(v.retweets)}
       </span>
-      <span class="act like">
+      <span class="act like" aria-hidden="true">
         <IconLike />
         {formatCount(v.likes)}
       </span>
-      <span class="act views">
+      <span class="act views" aria-hidden="true">
         <IconViews />
         {v.views != null ? formatCount(v.views) : ''}
       </span>
+      <BookmarkMenu view={v} lists={props.bookmarkLists} />
     </div>
   )
 }
@@ -141,7 +198,10 @@ function ReplyContext(props: { view: TweetView }) {
 }
 
 /** 一覧用のツイートカード (X 風の横並び)。カード全体がクリック可能。 */
-export function TweetCard(props: { view: TweetView }) {
+export function TweetCard(props: {
+  view: TweetView
+  bookmarkLists?: BookmarkListWithCount[]
+}) {
   const v = props.view
   return (
     <article class="tweet row">
@@ -155,14 +215,17 @@ export function TweetCard(props: { view: TweetView }) {
         {v.text ? <div class="tweet-body">{linkifyText(v.text)}</div> : null}
         <MediaGrid media={v.media} detail={false} />
         {v.quote ? <QuoteCard view={v.quote} /> : null}
-        <ActionsBar view={v} />
+        <ActionsBar view={v} bookmarkLists={props.bookmarkLists ?? []} />
       </div>
     </article>
   )
 }
 
 /** 詳細表示のツイート (本文大きめ・日時・メトリクス)。 */
-export function TweetDetail(props: { view: TweetView }) {
+export function TweetDetail(props: {
+  view: TweetView
+  bookmarkLists?: BookmarkListWithCount[]
+}) {
   const v = props.view
   return (
     <article class="tweet detail">
@@ -172,6 +235,9 @@ export function TweetDetail(props: { view: TweetView }) {
           <img class="avatar" src={avatarSrc(v)} alt="" loading="lazy" />
         </a>
         <MetaLine view={v} />
+        <div class="detail-bm">
+          <BookmarkMenu view={v} lists={props.bookmarkLists ?? []} />
+        </div>
       </div>
       {v.text ? <div class="tweet-body">{linkifyText(v.text)}</div> : null}
       <MediaGrid media={v.media} detail />
@@ -202,6 +268,7 @@ export function Timeline(props: {
   views: TweetView[]
   empty?: Child
   nextHref?: string
+  bookmarkLists?: BookmarkListWithCount[]
 }) {
   if (props.views.length === 0) {
     return (
@@ -213,7 +280,7 @@ export function Timeline(props: {
   return (
     <div>
       {props.views.map((v) => (
-        <TweetCard view={v} />
+        <TweetCard view={v} bookmarkLists={props.bookmarkLists} />
       ))}
       {props.nextHref ? (
         <a class="loadmore" href={props.nextHref}>

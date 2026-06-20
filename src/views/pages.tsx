@@ -4,6 +4,8 @@ import type { Child } from 'hono/jsx'
 import type {
   AuthorListRow,
   AuthorRow,
+  BookmarkListRow,
+  BookmarkListWithCount,
   ListRow,
   ListWithCount,
   SortOrder,
@@ -14,6 +16,7 @@ import { TweetCard, TweetDetail, Timeline } from './Tweet.js'
 import { avatarSrc, formatCount, mediaUrl, type TweetView } from './model.js'
 import {
   IconBack,
+  IconBookmark,
   IconCalendar,
   IconEye,
   IconEyeOff,
@@ -53,14 +56,68 @@ function smallAvatar(a: AuthorRow): string {
   return mediaUrl(a.avatar_path) ?? a.avatar_url ?? ''
 }
 
-// 右カラム: 検索・アーカイブ追加・ユーザー一覧の抜粋。
-function RightSidebar(props: { authors: AuthorListRow[] }) {
+// 右カラム: 検索・アーカイブ追加・ブックマーク・ユーザー一覧の抜粋。
+function RightSidebar(props: {
+  authors: AuthorListRow[]
+  bookmarkLists: BookmarkListWithCount[]
+}) {
   return (
     <>
       <form class="searchbox" method="get" action="/search">
         <IconSearch />
         <input type="text" name="q" placeholder="検索" aria-label="アーカイブを検索" />
       </form>
+      <div class="panel">
+        <h3>ブックマーク</h3>
+        <form
+          method="post"
+          action="/bookmarks"
+          style="display:flex;gap:8px;margin-bottom:6px"
+        >
+          <input
+            class="field"
+            type="text"
+            name="name"
+            placeholder="新しいリスト名"
+            aria-label="新しいブックマークリスト名"
+            maxlength={50}
+            required
+          />
+          <button class="btn" type="submit">
+            作成
+          </button>
+        </form>
+        {props.bookmarkLists.length === 0 ? (
+          <div class="muted" style="font-size:14px;padding:4px">
+            リストを作るとツイートのブックマークボタンから保存できます。
+          </div>
+        ) : (
+          <>
+            {props.bookmarkLists.slice(0, 5).map((b) => (
+              <a
+                class="panel-row"
+                href={`/bookmarks/${b.id}`}
+                style="display:flex;gap:10px;align-items:center"
+              >
+                <span style="color:var(--muted);display:inline-flex">
+                  <IconBookmark size={18} />
+                </span>
+                <div style="min-width:0;flex:1">
+                  <div style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                    {b.name}
+                  </div>
+                  <div class="muted" style="font-size:14px">
+                    {formatCount(b.tweet_count)} 件
+                  </div>
+                </div>
+              </a>
+            ))}
+            <a class="panel-row" href="/bookmarks" style="color:var(--accent)">
+              すべて表示
+            </a>
+          </>
+        )}
+      </div>
       <div class="panel">
         <h3>アーカイブを追加</h3>
         <form
@@ -219,6 +276,7 @@ export function HomePage(props: {
   views: TweetView[]
   authors: AuthorListRow[]
   lists: ListWithCount[]
+  bookmarkLists: BookmarkListWithCount[]
   activeListId?: number
   sort: SortOrder
   nextHref?: string
@@ -250,7 +308,12 @@ export function HomePage(props: {
     <Layout
       title="ホーム / twiarchive"
       active="home"
-      right={<RightSidebar authors={props.authors} />}
+      right={
+        <RightSidebar
+          authors={props.authors}
+          bookmarkLists={props.bookmarkLists}
+        />
+      }
       metaRefresh={props.listSync?.running ? 5 : undefined}
     >
       <ColHead
@@ -272,7 +335,12 @@ export function HomePage(props: {
         activeListId={props.activeListId}
         sort={props.sort}
       />
-      <Timeline views={props.views} empty={empty} nextHref={props.nextHref} />
+      <Timeline
+        views={props.views}
+        empty={empty}
+        nextHref={props.nextHref}
+        bookmarkLists={props.bookmarkLists}
+      />
     </Layout>
   )
 }
@@ -282,6 +350,7 @@ export function SearchPage(props: {
   q: string
   mediaOnly: boolean
   authors: AuthorListRow[]
+  bookmarkLists: BookmarkListWithCount[]
 }) {
   const searched = props.q.length > 0 || props.mediaOnly
   const empty: Child = searched ? (
@@ -293,7 +362,12 @@ export function SearchPage(props: {
     <Layout
       title={props.q ? `${props.q} の検索結果` : '検索'}
       active="search"
-      right={<RightSidebar authors={props.authors} />}
+      right={
+        <RightSidebar
+          authors={props.authors}
+          bookmarkLists={props.bookmarkLists}
+        />
+      }
     >
       <ColHead title="検索" />
       <form
@@ -322,7 +396,11 @@ export function SearchPage(props: {
           </button>
         </div>
       </form>
-      <Timeline views={props.views} empty={empty} />
+      <Timeline
+        views={props.views}
+        empty={empty}
+        bookmarkLists={props.bookmarkLists}
+      />
     </Layout>
   )
 }
@@ -471,6 +549,7 @@ export function ListTimelinePage(props: {
   views: TweetView[]
   total: number
   nextHref?: string
+  bookmarkLists: BookmarkListWithCount[]
 }) {
   return (
     <Layout title={`${props.list.name} / リスト`} active="lists">
@@ -482,6 +561,7 @@ export function ListTimelinePage(props: {
       <Timeline
         views={props.views}
         nextHref={props.nextHref}
+        bookmarkLists={props.bookmarkLists}
         empty={
           <p>
             このリストにはまだ投稿がありません。メンバーのプロフィールから追加してください。
@@ -608,6 +688,7 @@ export function ProfilePage(props: {
   memberOf: number[]
   total: number
   nextHref?: string
+  bookmarkLists: BookmarkListWithCount[]
 }) {
   const a = props.author
   let followers = 0
@@ -681,6 +762,7 @@ export function ProfilePage(props: {
       <Timeline
         views={props.views}
         nextHref={props.nextHref}
+        bookmarkLists={props.bookmarkLists}
         empty={<p>このユーザーのアーカイブはまだありません。</p>}
       />
     </Layout>
@@ -732,6 +814,7 @@ export function DetailPage(props: {
   view: TweetView
   ancestors: TweetView[]
   replies: TweetView[]
+  bookmarkLists: BookmarkListWithCount[]
 }) {
   const v = props.view
   const title = `${v.name} (@${v.screenName}): ${v.text.slice(0, 60)}`
@@ -739,9 +822,9 @@ export function DetailPage(props: {
     <Layout title={title}>
       <ColHead title="ポスト" back="/" />
       {props.ancestors.map((a) => (
-        <TweetCard view={a} />
+        <TweetCard view={a} bookmarkLists={props.bookmarkLists} />
       ))}
-      <TweetDetail view={v} />
+      <TweetDetail view={v} bookmarkLists={props.bookmarkLists} />
       <div
         style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:16px;font-size:14px"
       >
@@ -761,10 +844,111 @@ export function DetailPage(props: {
             <h2 style="font-size:17px">返信 {props.replies.length} 件</h2>
           </div>
           {props.replies.map((r) => (
-            <TweetCard view={r} />
+            <TweetCard view={r} bookmarkLists={props.bookmarkLists} />
           ))}
         </>
       ) : null}
+    </Layout>
+  )
+}
+
+// ブックマークリストの一覧 + 作成/削除 (ListsPage のブックマーク版)。
+export function BookmarksPage(props: { lists: BookmarkListWithCount[] }) {
+  return (
+    <Layout title="ブックマーク / twiarchive" active="bookmarks">
+      <ColHead title="ブックマーク" sub={`${props.lists.length} 件`} />
+      <form
+        method="post"
+        action="/bookmarks"
+        style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:10px"
+      >
+        <input
+          class="field"
+          type="text"
+          name="name"
+          placeholder="新しいブックマークリスト名"
+          aria-label="新しいブックマークリスト名"
+          maxlength={50}
+          required
+        />
+        <button class="btn" type="submit">
+          作成
+        </button>
+      </form>
+      {props.lists.length === 0 ? (
+        <div class="empty">
+          <h3>ブックマークリストがありません</h3>
+          <p>
+            上のフォームで作成すると、各ツイートのブックマークボタンから保存できます。
+          </p>
+        </div>
+      ) : (
+        <div>
+          {props.lists.map((b) => (
+            <div class="user-row">
+              <a
+                class="uinfo"
+                href={`/bookmarks/${b.id}`}
+                style="display:flex;gap:12px;align-items:center;min-width:0"
+              >
+                <span style="color:var(--muted);display:inline-flex">
+                  <IconBookmark size={22} />
+                </span>
+                <div style="min-width:0">
+                  <div class="uname">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      {b.name}
+                    </span>
+                  </div>
+                  <div class="ucount">{formatCount(b.tweet_count)} 件</div>
+                </div>
+              </a>
+              <form
+                method="post"
+                action={`/bookmarks/${b.id}/delete`}
+                onsubmit="return confirm('このブックマークリストを削除しますか?')"
+              >
+                <button
+                  class="btn sm ghost"
+                  type="submit"
+                  aria-label="ブックマークリストを削除"
+                >
+                  <IconTrash size={16} />
+                </button>
+              </form>
+            </div>
+          ))}
+        </div>
+      )}
+    </Layout>
+  )
+}
+
+// ブックマークリスト内のツイートを並べるページ。
+export function BookmarkTimelinePage(props: {
+  list: BookmarkListRow
+  views: TweetView[]
+  total: number
+  nextHref?: string
+  bookmarkLists: BookmarkListWithCount[]
+}) {
+  return (
+    <Layout title={`${props.list.name} / ブックマーク`} active="bookmarks">
+      <ColHead
+        title={props.list.name}
+        sub={`${formatCount(props.total)} 件のブックマーク`}
+        back="/bookmarks"
+      />
+      <Timeline
+        views={props.views}
+        nextHref={props.nextHref}
+        bookmarkLists={props.bookmarkLists}
+        empty={
+          <p>
+            このリストにはまだ保存がありません。ツイートのブックマークボタンから追加してください。
+          </p>
+        }
+      />
     </Layout>
   )
 }

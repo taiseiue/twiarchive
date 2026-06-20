@@ -94,6 +94,24 @@ db.exec(`
     FOREIGN KEY (author_id) REFERENCES authors(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_list_members_author ON list_members (author_id);
+
+  -- ブックマーク: ツイートをまとめるリスト。lists がユーザー単位なのに対し、
+  -- こちらは個々のツイート単位で保存する。
+  CREATE TABLE IF NOT EXISTS bookmark_lists (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS bookmarks (
+    list_id    INTEGER NOT NULL,
+    tweet_id   TEXT NOT NULL,
+    added_at   INTEGER NOT NULL,
+    PRIMARY KEY (list_id, tweet_id),
+    FOREIGN KEY (list_id) REFERENCES bookmark_lists(id) ON DELETE CASCADE,
+    FOREIGN KEY (tweet_id) REFERENCES tweets(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_bookmarks_tweet ON bookmarks (tweet_id);
 `)
 
 // ---- マイグレーション (既存 DB に不足カラムを追加) ----
@@ -555,6 +573,104 @@ export function countByList(listId: number): number {
       `SELECT COUNT(*) AS c FROM tweets
        WHERE author_id IN (SELECT author_id FROM list_members WHERE list_id = ?)`,
     )
+    .get(listId) as { c: number }
+  return row.c
+}
+
+// ---- ブックマーク ----
+
+export interface BookmarkListRow {
+  id: number
+  name: string
+  created_at: number
+}
+
+export interface BookmarkListWithCount extends BookmarkListRow {
+  tweet_count: number
+}
+
+const createBookmarkListStmt = db.prepare(
+  `INSERT INTO bookmark_lists (name, created_at) VALUES (?, ?)`,
+)
+const deleteBookmarkListStmt = db.prepare(
+  `DELETE FROM bookmark_lists WHERE id = ?`,
+)
+const getBookmarkListStmt = db.prepare(`SELECT * FROM bookmark_lists WHERE id = ?`)
+const addBookmarkStmt = db.prepare(
+  `INSERT OR IGNORE INTO bookmarks (list_id, tweet_id, added_at) VALUES (?, ?, ?)`,
+)
+const removeBookmarkStmt = db.prepare(
+  `DELETE FROM bookmarks WHERE list_id = ? AND tweet_id = ?`,
+)
+const bookmarkListIdsForTweetStmt = db.prepare(
+  `SELECT list_id FROM bookmarks WHERE tweet_id = ?`,
+)
+
+/** ブックマークリストを作成し、新しい id を返す。 */
+export function createBookmarkList(name: string): number {
+  const info = createBookmarkListStmt.run(name, Date.now())
+  return Number(info.lastInsertRowid)
+}
+
+/** ブックマークリストを削除する (CASCADE で保存ツイートも消える)。 */
+export function deleteBookmarkList(id: number): void {
+  deleteBookmarkListStmt.run(id)
+}
+
+export function getBookmarkList(id: number): BookmarkListRow | undefined {
+  return getBookmarkListStmt.get(id) as BookmarkListRow | undefined
+}
+
+/** 全ブックマークリストを保存件数つきで返す。新しい順。 */
+export function listBookmarkLists(): BookmarkListWithCount[] {
+  const stmt = db.prepare(`
+    SELECT b.*,
+      (SELECT COUNT(*) FROM bookmarks m WHERE m.list_id = b.id) AS tweet_count
+    FROM bookmark_lists b
+    ORDER BY b.created_at DESC
+  `)
+  return stmt.all() as unknown as BookmarkListWithCount[]
+}
+
+export function addBookmark(listId: number, tweetId: string): void {
+  addBookmarkStmt.run(listId, tweetId, Date.now())
+}
+
+export function removeBookmark(listId: number, tweetId: string): void {
+  removeBookmarkStmt.run(listId, tweetId)
+}
+
+/** あるツイートが保存されているブックマークリスト id の一覧。 */
+export function bookmarkListIdsForTweet(tweetId: string): number[] {
+  const rows = bookmarkListIdsForTweetStmt.all(tweetId) as unknown as {
+    list_id: number
+  }[]
+  return rows.map((r) => r.list_id)
+}
+
+/** ブックマークリスト別タイムライン。保存が新しい順。 */
+export function listByBookmark(
+  listId: number,
+  opts: { limit?: number; offset?: number } = {},
+): TweetRow[] {
+  const stmt = db.prepare(`
+    SELECT t.* FROM tweets t
+    JOIN bookmarks b ON b.tweet_id = t.id
+    WHERE b.list_id = ?
+    ORDER BY b.added_at DESC
+    LIMIT ? OFFSET ?
+  `)
+  return stmt.all(
+    listId,
+    opts.limit ?? 50,
+    opts.offset ?? 0,
+  ) as unknown as TweetRow[]
+}
+
+/** ブックマークリストに保存されたツイート総数。 */
+export function countByBookmark(listId: number): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS c FROM bookmarks WHERE list_id = ?`)
     .get(listId) as { c: number }
   return row.c
 }

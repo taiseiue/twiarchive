@@ -1,7 +1,7 @@
 // DB 行を描画用のビューモデルへ変換するヘルパと整形ユーティリティ。
 
 import type { Child } from 'hono/jsx'
-import { getAuthor, getMedia, getTweet } from '../db.js'
+import { bookmarkListIdsForTweet, getAuthor, getMedia, getTweet } from '../db.js'
 import type { MediaRow, TweetRow } from '../db.js'
 
 export interface TweetView {
@@ -21,6 +21,8 @@ export interface TweetView {
   media: MediaRow[]
   quote: TweetView | null
   replyingTo: { screenName: string; id: string } | null
+  /** このツイートが保存されているブックマークリスト id の一覧。 */
+  bookmarkedIn: number[]
 }
 
 /** TweetRow から描画用ビューモデルを構築する。quote は 1 段だけ展開する。 */
@@ -53,6 +55,8 @@ export function loadTweetView(row: TweetRow, expandQuote = true): TweetView {
     media: getMedia(row.id),
     quote,
     replyingTo,
+    // 引用ツイート (expandQuote=false) にはブックマークボタンを出さないので省略。
+    bookmarkedIn: expandQuote ? bookmarkListIdsForTweet(row.id) : [],
   }
 }
 

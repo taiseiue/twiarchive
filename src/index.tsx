@@ -14,24 +14,32 @@ import {
 } from './sync.js'
 import {
   MEDIA_DIR,
+  addBookmark,
   addListMember,
   countAuthors,
+  countByBookmark,
   countByList,
   countByUser,
+  createBookmarkList,
   createList,
+  deleteBookmarkList,
   deleteList,
   getAncestors,
   getAuthorByName,
+  getBookmarkList,
   getList,
   getReplies,
   getTweet,
   listAuthors,
+  listBookmarkLists,
+  listByBookmark,
   listByList,
   listByUser,
   listIdsForAuthor,
   listLists,
   listMembers,
   listTimeline,
+  removeBookmark,
   removeListMember,
   searchTweets,
   setListHidden,
@@ -40,6 +48,8 @@ import type { SortOrder } from './db.js'
 import { FxTwitterError } from './fxtwitter.js'
 import { loadTimelineViews, loadTweetView } from './views/model.js'
 import {
+  BookmarksPage,
+  BookmarkTimelinePage,
   DetailPage,
   ErrorPage,
   HomePage,
@@ -63,6 +73,7 @@ const RESERVED = new Set([
   'search',
   'users',
   'lists',
+  'bookmarks',
   'favicon.ico',
   'robots.txt',
 ])
@@ -204,6 +215,7 @@ app.get('/', (c) => {
       views={views}
       authors={listAuthors({ limit: 5 })}
       lists={lists}
+      bookmarkLists={listBookmarkLists()}
       activeListId={activeListId}
       sort={sort}
       nextHref={nextHref}
@@ -249,6 +261,7 @@ app.get('/search', (c) => {
       q={q}
       mediaOnly={mediaOnly}
       authors={listAuthors({ limit: 5 })}
+      bookmarkLists={listBookmarkLists()}
     />,
   )
 })
@@ -298,6 +311,7 @@ app.get('/lists/:id', (c) => {
       views={views}
       total={countByList(list.id)}
       nextHref={nextHref}
+      bookmarkLists={listBookmarkLists()}
     />,
   )
 })
@@ -331,6 +345,63 @@ app.post('/lists/:id/members', async (c) => {
   return c.redirect(c.req.header('Referer') ?? `/lists/${listId}`)
 })
 
+// ---- ブックマーク ----
+app.get('/bookmarks', (c) => {
+  return c.html(<BookmarksPage lists={listBookmarkLists()} />)
+})
+
+app.post('/bookmarks', async (c) => {
+  const body = await c.req.parseBody()
+  const name = String(body['name'] ?? '').trim()
+  if (name) createBookmarkList(name.slice(0, 50))
+  return c.redirect(c.req.header('Referer') ?? '/bookmarks')
+})
+
+app.get('/bookmarks/:id', (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const list = getBookmarkList(Number(id))
+  if (!list) return c.notFound()
+  const offset = parseOffset(c)
+  const rows = listByBookmark(list.id, { limit: PAGE_SIZE + 1, offset })
+  const hasNext = rows.length > PAGE_SIZE
+  const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
+  const nextHref = hasNext
+    ? `/bookmarks/${list.id}?offset=${offset + PAGE_SIZE}`
+    : undefined
+  return c.html(
+    <BookmarkTimelinePage
+      list={list}
+      views={views}
+      total={countByBookmark(list.id)}
+      nextHref={nextHref}
+      bookmarkLists={listBookmarkLists()}
+    />,
+  )
+})
+
+app.post('/bookmarks/:id/delete', (c) => {
+  const id = c.req.param('id')
+  if (/^\d+$/.test(id)) deleteBookmarkList(Number(id))
+  return c.redirect('/bookmarks')
+})
+
+// ツイートをブックマークリストへ追加/解除 (ツイートのドロップダウンから)。
+app.post('/bookmarks/:id/tweets', async (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const listId = Number(id)
+  if (!getBookmarkList(listId)) return c.notFound()
+  const body = await c.req.parseBody()
+  const tweetId = String(body['tweet_id'] ?? '')
+  const action = body['action']
+  if (tweetId && getTweet(tweetId)) {
+    if (action === 'remove') removeBookmark(listId, tweetId)
+    else addBookmark(listId, tweetId)
+  }
+  return c.redirect(c.req.header('Referer') ?? `/bookmarks/${listId}`)
+})
+
 // ---- URL 貼り付け → 該当パスへリダイレクト ----
 app.get('/go', (c) => {
   const url = c.req.query('url') ?? ''
@@ -359,7 +430,12 @@ app.get('/:username/status/:id', async (c) => {
     const ancestors = loadTimelineViews(getAncestors(id))
     const replies = loadTimelineViews(getReplies(id))
     return c.html(
-      <DetailPage view={view} ancestors={ancestors} replies={replies} />,
+      <DetailPage
+        view={view}
+        ancestors={ancestors}
+        replies={replies}
+        bookmarkLists={listBookmarkLists()}
+      />,
     )
   } catch (err) {
     const message =
@@ -416,6 +492,7 @@ app.get('/:username', (c) => {
       memberOf={listIdsForAuthor(author.id)}
       total={countByUser(author.screen_name)}
       nextHref={nextHref}
+      bookmarkLists={listBookmarkLists()}
     />,
   )
 })

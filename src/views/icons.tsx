@@ -190,6 +190,27 @@ export function IconEyeOff(props: IconProps) {
   )
 }
 
+/** ブックマーク。filled=true で保存済みの塗りつぶし表示。 */
+export function IconBookmark(props: IconProps & { filled?: boolean }) {
+  const s = props.size ?? 24
+  return (
+    <svg
+      class={props.class}
+      width={s}
+      height={s}
+      viewBox="0 0 24 24"
+      fill={props.filled ? 'currentColor' : 'none'}
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+    </svg>
+  )
+}
+
 /** 認証済みバッジ (塗りつぶし)。X の seal アイコンを再現。 */
 export function IconVerified(props: IconProps) {
   const s = props.size ?? 19

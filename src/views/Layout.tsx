@@ -2,9 +2,16 @@
 
 import type { Child } from 'hono/jsx'
 import { raw } from 'hono/html'
-import { IconHome, IconList, IconLogo, IconSearch, IconUsers } from './icons.js'
+import {
+  IconBookmark,
+  IconHome,
+  IconList,
+  IconLogo,
+  IconSearch,
+  IconUsers,
+} from './icons.js'
 
-export type NavKey = 'home' | 'search' | 'users' | 'lists' | ''
+export type NavKey = 'home' | 'search' | 'users' | 'lists' | 'bookmarks' | ''
 
 const CSS = `
   :root {
@@ -244,6 +251,42 @@ const CSS = `
   .act.rt:hover { color: var(--rt); }
   .act.like:hover { color: var(--like); }
 
+  /* ---- ブックマークボタン + ドロップダウン (ツイートアクション内) ---- */
+  .bmmenu { position: relative; display: inline-flex; }
+  .bmmenu > summary {
+    list-style: none; cursor: pointer; -webkit-user-select: none; user-select: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); transition: color .15s ease;
+  }
+  .bmmenu > summary::-webkit-details-marker { display: none; }
+  .bmmenu > summary svg { width: 18px; height: 18px; }
+  .bmmenu > summary:hover { color: var(--accent); }
+  .bmmenu.is-saved > summary { color: var(--accent); }
+  .bmmenu-list {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+    min-width: 220px; max-height: 320px; overflow-y: auto; padding: 6px 0;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 0 18px rgba(0,0,0,0.65);
+  }
+  .bmmenu-head { padding: 10px 16px 6px; font-size: 13px; font-weight: 700;
+    color: var(--muted); }
+  .bmmenu form { display: block; }
+  .bmmenu-item {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; font-size: 15px; font-weight: 700; color: var(--text);
+    background: transparent; border: none; cursor: pointer; text-align: left;
+    transition: background .15s ease;
+  }
+  .bmmenu-item:hover { background: var(--hover); }
+  .bmmenu-name { flex: 1; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .bmmenu-check { margin-left: auto; color: var(--accent); font-weight: 800;
+    visibility: hidden; }
+  .bmmenu-item.active .bmmenu-check { visibility: visible; }
+  .bmmenu-empty { display: block; padding: 12px 16px; font-size: 14px;
+    color: var(--accent); }
+  .detail-bm { margin-left: auto; }
+
   /* ユーザー一覧 */
   .user-row { display: flex; gap: 12px; align-items: center;
     padding: 12px 16px; border-bottom: 1px solid var(--border);
@@ -432,6 +475,10 @@ export function Layout(props: {
                 <a class={navClass('lists')} href="/lists">
                   <IconList />
                   <span>リスト</span>
+                </a>
+                <a class={navClass('bookmarks')} href="/bookmarks">
+                  <IconBookmark />
+                  <span>ブックマーク</span>
                 </a>
               </div>
             </nav>
