@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { compress } from 'hono/compress'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { join, normalize, sep } from 'node:path'
 import { Readable } from 'node:stream'
@@ -9,6 +10,7 @@ import { getSyncState, startSync } from './sync.js'
 import {
   MEDIA_DIR,
   addListMember,
+  countAuthors,
   countByList,
   countByUser,
   createList,
@@ -44,6 +46,9 @@ import {
 } from './views/pages.js'
 
 const app = new Hono()
+
+// HTML 等のテキスト応答を gzip/deflate 圧縮する (画像・動画など非圧縮タイプは自動スキップ)。
+app.use('*', compress())
 
 // /:username で拾ってはいけない予約語。
 const RESERVED = new Set([
@@ -189,7 +194,7 @@ app.get('/', (c) => {
   return c.html(
     <HomePage
       views={views}
-      authors={listAuthors()}
+      authors={listAuthors({ limit: 5 })}
       lists={lists}
       activeListId={activeListId}
       sort={sort}
@@ -221,14 +226,24 @@ app.get('/search', (c) => {
       views={loadTimelineViews(rows)}
       q={q}
       mediaOnly={mediaOnly}
-      authors={listAuthors()}
+      authors={listAuthors({ limit: 5 })}
     />,
   )
 })
 
-// ---- ユーザー一覧 ----
+// ---- ユーザー一覧 (ページング) ----
 app.get('/users', (c) => {
-  return c.html(<UsersPage authors={listAuthors()} />)
+  const offset = parseOffset(c)
+  const authors = listAuthors({ limit: PAGE_SIZE + 1, offset })
+  const hasNext = authors.length > PAGE_SIZE
+  const nextHref = hasNext ? `/users?offset=${offset + PAGE_SIZE}` : undefined
+  return c.html(
+    <UsersPage
+      authors={authors.slice(0, PAGE_SIZE)}
+      total={countAuthors()}
+      nextHref={nextHref}
+    />,
+  )
 })
 
 // ---- ユーザーリスト ----

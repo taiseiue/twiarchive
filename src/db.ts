@@ -56,6 +56,8 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_tweets_created ON tweets (created_timestamp DESC);
   CREATE INDEX IF NOT EXISTS idx_tweets_screen_name ON tweets (screen_name);
+  -- 著者別の集計 (listAuthors の投稿数カウント) / リスト別タイムラインの絞り込みに使う。
+  CREATE INDEX IF NOT EXISTS idx_tweets_author ON tweets (author_id);
 
   CREATE TABLE IF NOT EXISTS media (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -302,17 +304,28 @@ export interface AuthorListRow extends AuthorRow {
 }
 
 /** アーカイブ済み著者の一覧。ツイート数の多い順。limit 未指定なら全件。 */
-export function listAuthors(limit?: number): AuthorListRow[] {
+export function listAuthors(
+  opts: { limit?: number; offset?: number } = {},
+): AuthorListRow[] {
+  const { limit, offset } = opts
   const stmt = db.prepare(`
     SELECT a.*,
       (SELECT COUNT(*) FROM tweets t WHERE t.author_id = a.id) AS tweet_count
     FROM authors a
     ORDER BY tweet_count DESC, a.updated_at DESC
-    ${limit != null ? 'LIMIT ?' : ''}
+    ${limit != null ? 'LIMIT ? OFFSET ?' : ''}
   `)
   return (limit != null
-    ? stmt.all(limit)
+    ? stmt.all(limit, offset ?? 0)
     : stmt.all()) as unknown as AuthorListRow[]
+}
+
+/** アーカイブ済み著者の総数。 */
+export function countAuthors(): number {
+  const row = db.prepare(`SELECT COUNT(*) AS c FROM authors`).get() as {
+    c: number
+  }
+  return row.c
 }
 
 export function getTweet(id: string): TweetRow | undefined {

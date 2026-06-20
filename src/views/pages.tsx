@@ -279,11 +279,15 @@ export function SearchPage(props: {
   )
 }
 
-export function UsersPage(props: { authors: AuthorListRow[] }) {
+export function UsersPage(props: {
+  authors: AuthorListRow[]
+  total: number
+  nextHref?: string
+}) {
   return (
     <Layout title="ユーザー / twiarchive" active="users">
-      <ColHead title="ユーザー" sub={`${props.authors.length} 人をアーカイブ済み`} />
-      {props.authors.length === 0 ? (
+      <ColHead title="ユーザー" sub={`${formatCount(props.total)} 人をアーカイブ済み`} />
+      {props.total === 0 ? (
         <div class="empty">
           <p>まだ誰もアーカイブされていません。</p>
         </div>
@@ -310,6 +314,11 @@ export function UsersPage(props: { authors: AuthorListRow[] }) {
               </div>
             </a>
           ))}
+          {props.nextHref ? (
+            <a class="loadmore" href={props.nextHref}>
+              もっと見る
+            </a>
+          ) : null}
         </div>
       )}
     </Layout>
