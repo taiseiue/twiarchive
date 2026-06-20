@@ -6,7 +6,12 @@ import { join, normalize, sep } from 'node:path'
 import { Readable } from 'node:stream'
 
 import { archiveTweet } from './archive.js'
-import { getSyncState, startSync } from './sync.js'
+import {
+  getListSyncState,
+  getSyncState,
+  startListSync,
+  startSync,
+} from './sync.js'
 import {
   MEDIA_DIR,
   addListMember,
@@ -25,6 +30,7 @@ import {
   listByUser,
   listIdsForAuthor,
   listLists,
+  listMembers,
   listTimeline,
   removeListMember,
   searchTweets,
@@ -199,8 +205,22 @@ app.get('/', (c) => {
       activeListId={activeListId}
       sort={sort}
       nextHref={nextHref}
+      listSync={activeListId != null ? getListSyncState(activeListId) : undefined}
     />,
   )
+})
+
+// ---- リスト内の全ユーザーをまとめて同期 (バックグラウンド) ----
+app.post('/lists/:id/sync', async (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const listId = Number(id)
+  if (!getList(listId)) return c.notFound()
+  const body = await c.req.parseBody()
+  const refresh = body['refresh'] === '1'
+  const usernames = listMembers(listId).map((a) => a.screen_name)
+  if (usernames.length > 0) startListSync(listId, usernames, refresh)
+  return c.redirect(`/?list=${listId}`)
 })
 
 // ---- 検索 / メディア絞り込み ----

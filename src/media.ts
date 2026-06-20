@@ -53,7 +53,12 @@ function extFromUrl(url: string, fallback: string): string {
 async function downloadTo(url: string, relPath: string): Promise<boolean> {
   const dest = join(MEDIA_DIR, relPath)
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+    // 動画など大きめのファイルもあるので長めだが、ハングで一括同期が
+    // 止まらないよう上限を設ける。
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(60_000),
+    })
     if (!res.ok) {
       console.warn(`[media] download failed ${res.status}: ${url}`)
       return false

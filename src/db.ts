@@ -511,6 +511,17 @@ export function removeListMember(listId: number, authorId: string): void {
   removeListMemberStmt.run(listId, authorId)
 }
 
+/** リストに所属するユーザー (著者) の一覧。追加が新しい順。 */
+export function listMembers(listId: number): AuthorRow[] {
+  const stmt = db.prepare(`
+    SELECT a.* FROM authors a
+    JOIN list_members m ON m.author_id = a.id
+    WHERE m.list_id = ?
+    ORDER BY m.added_at DESC
+  `)
+  return stmt.all(listId) as unknown as AuthorRow[]
+}
+
 /** あるユーザーが所属するリスト id の一覧。 */
 export function listIdsForAuthor(authorId: string): number[] {
   const rows = listIdsForAuthorStmt.all(authorId) as unknown as {

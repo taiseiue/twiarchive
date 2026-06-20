@@ -85,7 +85,18 @@ const CSS = `
     color: var(--text); transition: background .15s ease;
   }
   .iconbtn:hover { background: var(--hover); }
-  .colhead-action { margin-left: auto; display: flex; align-items: center; }
+  .colhead-action { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+
+  /* ヘッダ右の丸アイコンボタン (リスト一括同期など) */
+  .headicon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 9999px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--muted); transition: background .15s ease;
+  }
+  .headicon:hover { background: var(--hover); }
+  .headicon[disabled] { cursor: default; }
+  .icon-spin { animation: spin .8s linear infinite; }
 
   /* ---- 並べ替えドロップダウン ---- */
   .sortmenu { position: relative; }

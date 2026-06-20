@@ -5,6 +5,28 @@ const API_BASE = 'https://api.fxtwitter.com'
 const USER_AGENT =
   'twiarchive/1.0 (+https://github.com/taiseiue/twiarchive)'
 
+// API が応答しないと一括同期が丸ごと止まるので、1 リクエストに上限を設ける。
+const API_TIMEOUT_MS = 30_000
+
+// タイムアウト付きで JSON API を叩く。時間切れ・通信失敗は FxTwitterError にして
+// 呼び出し元 (archiveProfile など) が握りつぶせるようにする。
+async function fetchJson(url: URL): Promise<Response> {
+  try {
+    return await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    })
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === 'TimeoutError'
+    throw new FxTwitterError(
+      timedOut
+        ? `応答がありません (${API_TIMEOUT_MS / 1000}s で打ち切り)`
+        : `通信に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+      0,
+    )
+  }
+}
+
 export interface ApiPhoto {
   type: 'photo'
   id: string
@@ -123,9 +145,7 @@ export async function fetchProfileStatuses(
   )
   if (cursor) url.searchParams.set('cursor', cursor)
 
-  const res = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  })
+  const res = await fetchJson(url)
 
   let body: ProfileStatusesResponse | null = null
   try {
@@ -180,9 +200,7 @@ export async function fetchConversation(
   const url = new URL(`${API_BASE}/2/conversation/${encodeURIComponent(id)}`)
   if (cursor) url.searchParams.set('cursor', cursor)
 
-  const res = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-  })
+  const res = await fetchJson(url)
 
   let body: ConversationResponse | null = null
   try {

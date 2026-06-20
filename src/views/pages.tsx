@@ -8,7 +8,7 @@ import type {
   ListWithCount,
   SortOrder,
 } from '../db.js'
-import type { SyncState } from '../sync.js'
+import type { ListSyncState, SyncState } from '../sync.js'
 import { Layout } from './Layout.js'
 import { TweetCard, TweetDetail, Timeline } from './Tweet.js'
 import { avatarSrc, formatCount, mediaUrl, type TweetView } from './model.js'
@@ -188,6 +188,39 @@ function SortMenu(props: { activeListId?: number; sort: SortOrder }) {
   )
 }
 
+// ホームのリストタブで、リスト内の全ユーザーを一括同期するアイコンボタン。
+// ヘッダ右 (ソートの左) に置き、同期中はアイコンが回転する。
+function ListSyncButton(props: { listId: number; sync: ListSyncState }) {
+  const s = props.sync
+  if (s.running) {
+    const title = `同期中… ${s.done}/${s.total} 人${
+      s.current ? ` (@${s.current})` : ''
+    } ・ +${formatCount(s.added)} 件`
+    return (
+      <span class="headicon" title={title} aria-label={title}>
+        <IconRefresh size={18} class="icon-spin" />
+      </span>
+    )
+  }
+  const title = s.finishedAt
+    ? s.errors.length > 0
+      ? `前回の同期: +${formatCount(s.added)} 件 ・ ${s.errors.length} 人失敗`
+      : `前回の同期: +${formatCount(s.added)} 件`
+    : 'リスト全員を同期'
+  return (
+    <form method="post" action={`/lists/${props.listId}/sync`}>
+      <button
+        class="headicon"
+        type="submit"
+        title={title}
+        aria-label="リスト全員を同期"
+      >
+        <IconRefresh size={18} />
+      </button>
+    </form>
+  )
+}
+
 export function HomePage(props: {
   views: TweetView[]
   authors: AuthorListRow[]
@@ -195,6 +228,7 @@ export function HomePage(props: {
   activeListId?: number
   sort: SortOrder
   nextHref?: string
+  listSync?: ListSyncState
 }) {
   const empty: Child =
     props.activeListId == null ? (
@@ -212,11 +246,24 @@ export function HomePage(props: {
       </p>
     )
   return (
-    <Layout title="ホーム / twiarchive" active="home" right={<RightSidebar authors={props.authors} />}>
+    <Layout
+      title="ホーム / twiarchive"
+      active="home"
+      right={<RightSidebar authors={props.authors} />}
+      metaRefresh={props.listSync?.running ? 5 : undefined}
+    >
       <ColHead
         title="ホーム"
         action={
-          <SortMenu activeListId={props.activeListId} sort={props.sort} />
+          <>
+            {props.activeListId != null && props.listSync ? (
+              <ListSyncButton
+                listId={props.activeListId}
+                sync={props.listSync}
+              />
+            ) : null}
+            <SortMenu activeListId={props.activeListId} sort={props.sort} />
+          </>
         }
       />
       <HomeTabs
