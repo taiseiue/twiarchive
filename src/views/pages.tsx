@@ -539,49 +539,64 @@ function formatJoined(joined?: string): string {
   }).format(d)
 }
 
-// プロフィール上のリスト所属トグル。各リストを add/remove のフォームボタンで切り替える。
+// プロフィール上のリスト所属を Twitter のフォローボタン風に切り替える。
+// どのリストにも入っていなければ「フォローする」、1 つでも入っていれば
+// 「フォロー中」(ホバーで「フォロー解除」) を表示し、ドロップダウンから
+// 複数のリストへ追加/削除できる。
 function ProfileLists(props: {
   authorId: string
   lists: ListWithCount[]
   memberOf: number[]
 }) {
+  if (props.lists.length === 0) {
+    return (
+      <a class="btn ghost sm" href="/lists">
+        リストを作成
+      </a>
+    )
+  }
   const member = new Set(props.memberOf)
+  const following = member.size > 0
   return (
-    <div class="syncbar" style="gap:8px">
-      <span class="sync-status">
-        <IconList size={16} /> リスト
-      </span>
-      {props.lists.length === 0 ? (
-        <span class="muted" style="font-size:14px">
-          <a href="/lists" style="color:var(--accent)">
-            リストを作成
-          </a>
-          すると、ここから追加できます。
-        </span>
-      ) : (
-        props.lists.map((l) => {
-          const joined = member.has(l.id)
-          return (
-            <form method="post" action={`/lists/${l.id}/members`}>
-              <input type="hidden" name="author_id" value={props.authorId} />
-              <input
-                type="hidden"
-                name="action"
-                value={joined ? 'remove' : 'add'}
-              />
-              <button
-                class={joined ? 'btn sm' : 'btn sm ghost'}
-                type="submit"
-                aria-pressed={joined ? 'true' : 'false'}
-              >
-                {joined ? '✓ ' : '+ '}
-                {l.name}
-              </button>
-            </form>
-          )
-        })
-      )}
-    </div>
+    <details class={`followmenu${following ? ' is-following' : ''}`}>
+        <summary aria-label="リストへの追加">
+          {following ? (
+            <>
+              <span class="follow-label following">フォロー中</span>
+              <span class="follow-label unfollow">フォロー解除</span>
+            </>
+          ) : (
+            <span class="follow-label">フォローする</span>
+          )}
+        </summary>
+        <div class="followmenu-list" role="menu">
+          <div class="followmenu-head">リストに追加 / 削除</div>
+          {props.lists.map((l) => {
+            const joined = member.has(l.id)
+            return (
+              <form method="post" action={`/lists/${l.id}/members`}>
+                <input type="hidden" name="author_id" value={props.authorId} />
+                <input
+                  type="hidden"
+                  name="action"
+                  value={joined ? 'remove' : 'add'}
+                />
+                <button
+                  class={`followmenu-item${joined ? ' active' : ''}`}
+                  type="submit"
+                  role="menuitemcheckbox"
+                  aria-checked={joined ? 'true' : 'false'}
+                >
+                  <span class="followmenu-name">{l.name}</span>
+                  <span class="followmenu-check" aria-hidden="true">
+                    ✓
+                  </span>
+                </button>
+              </form>
+            )
+          })}
+        </div>
+      </details>
   )
 }
 
@@ -628,7 +643,14 @@ export function ProfilePage(props: {
         <div class="profile-banner" />
       )}
       <div class="profile-head">
-        <img class="profile-avatar" src={avatar} alt="" />
+        <div class="profile-top">
+          <img class="profile-avatar" src={avatar} alt="" />
+          <ProfileLists
+            authorId={a.id}
+            lists={props.lists}
+            memberOf={props.memberOf}
+          />
+        </div>
         <div class="profile-name">
           {a.name}
           {a.verified === 1 ? (
@@ -656,11 +678,6 @@ export function ProfilePage(props: {
         </div>
       </div>
       <SyncBar username={a.screen_name} sync={props.sync} />
-      <ProfileLists
-        authorId={a.id}
-        lists={props.lists}
-        memberOf={props.memberOf}
-      />
       <Timeline
         views={props.views}
         nextHref={props.nextHref}

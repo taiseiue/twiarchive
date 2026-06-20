@@ -271,6 +271,56 @@ const CSS = `
     font-size: 14px; }
   .profile-stats b { color: var(--text); }
 
+  /* ---- リスト追加 (Twitter フォローボタン風) ---- */
+  /* アバター (左, バナーに被って上にせり出す) とフォローボタン (右) を同じ行に並べ、
+     ボタンをバナー右下に置く。 */
+  .profile-top { display: flex; align-items: flex-start;
+    justify-content: space-between; gap: 12px; }
+  .followmenu { position: relative; flex: 0 0 auto; }
+  .followmenu > summary {
+    list-style: none; cursor: pointer; -webkit-user-select: none; user-select: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 116px; padding: 8px 18px; border-radius: 9999px;
+    font-size: 15px; font-weight: 700; border: 1px solid transparent;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .followmenu > summary::-webkit-details-marker { display: none; }
+  /* 未追加: 白塗りのフォローボタン */
+  .followmenu > summary { background: var(--text); color: var(--bg); }
+  .followmenu > summary:hover { background: #d2d6d8; }
+  /* 追加済み: 枠線ボタン。ホバーで赤い「フォロー解除」 */
+  .followmenu.is-following > summary {
+    background: transparent; color: var(--text); border-color: var(--border);
+  }
+  .followmenu.is-following > summary:hover {
+    color: #f4212e; border-color: rgba(244,33,46,0.4);
+    background: rgba(244,33,46,0.1);
+  }
+  .follow-label.unfollow { display: none; }
+  .followmenu.is-following > summary:hover .follow-label.following { display: none; }
+  .followmenu.is-following > summary:hover .follow-label.unfollow { display: inline; }
+  /* ドロップダウン */
+  .followmenu-list {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+    min-width: 240px; padding: 6px 0; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 0 18px rgba(0,0,0,0.65);
+  }
+  .followmenu-head { padding: 10px 16px 6px; font-size: 13px; font-weight: 700;
+    color: var(--muted); }
+  .followmenu form { display: block; }
+  .followmenu-item {
+    width: 100%; display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px; font-size: 15px; font-weight: 700; color: var(--text);
+    background: transparent; border: none; cursor: pointer; text-align: left;
+    transition: background .15s ease;
+  }
+  .followmenu-item:hover { background: var(--hover); }
+  .followmenu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .followmenu-check { margin-left: auto; color: var(--accent); font-weight: 800;
+    visibility: hidden; }
+  .followmenu-item.active .followmenu-check { visibility: visible; }
+
   /* 同期バー */
   .syncbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -311,16 +361,25 @@ const CSS = `
     .layout { display: block; }
     .sidebar {
       position: fixed; bottom: 0; left: 0; right: 0; top: auto;
-      height: auto; width: auto; flex-direction: row; justify-content: space-around;
-      padding: 4px 0; gap: 0; z-index: 100;
+      height: auto; width: auto; flex-direction: row;
+      padding: 0; gap: 0; z-index: 100;
       background: var(--header-blur); backdrop-filter: blur(12px);
       border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
     }
     .sidebar .logo { display: none; }
-    .navitem { font-size: 0; padding: 14px; }
+    /* ナビ項目を縦並びから横並びに変え、ボトムバーいっぱいに広げる */
+    .sidebar .nav {
+      flex-direction: row; width: 100%; margin-top: 0; gap: 0;
+    }
+    .navitem {
+      flex: 1 1 0; justify-content: center; gap: 0;
+      padding: 12px 0; border-radius: 0; font-size: 0;
+    }
     .navitem span { display: none; }
+    .navitem svg { width: 24px; height: 24px; }
     .main { max-width: none; border-left: none; border-right: none;
-      padding-bottom: 60px; }
+      padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
   }
 
   @media (prefers-reduced-motion: reduce) {
