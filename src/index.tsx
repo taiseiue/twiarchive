@@ -174,17 +174,19 @@ app.get('/', (c) => {
   const sort = parseSort(c)
   // ホームのタブにはホーム表示中 (hidden=0) のリストのみ並べる。
   const lists = listLists({ visibleOnly: true })
-  // ?list= が有効なリスト id ならそのタブを開く。
+  // ?list= が有効なリスト id ならそのタブを、無ければ先頭のリストを開く
+  // (「すべて」表示は廃止)。リストが無ければどのタブも開かない。
   const listParam = c.req.query('list')
   let activeListId: number | undefined
   if (listParam && /^\d+$/.test(listParam)) {
     const id = Number(listParam)
     if (lists.some((l) => l.id === id)) activeListId = id
   }
+  if (activeListId == null && lists.length > 0) activeListId = lists[0].id
   const rows =
     activeListId != null
       ? listByList(activeListId, { limit: PAGE_SIZE + 1, offset, sort })
-      : listTimeline({ limit: PAGE_SIZE + 1, offset, sort })
+      : []
   const hasNext = rows.length > PAGE_SIZE
   const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
   // list / sort を保持したまま次ページへ進む URL を組み立てる。

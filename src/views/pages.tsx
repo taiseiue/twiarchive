@@ -140,12 +140,6 @@ function HomeTabs(props: {
   const active = props.activeListId
   return (
     <div class="tabbar">
-      <a
-        class={`tab${active == null ? ' active' : ''}`}
-        href={homeHref(undefined, props.sort)}
-      >
-        <span>すべて</span>
-      </a>
       {props.lists.map((l) => (
         <a
           class={`tab${active === l.id ? ' active' : ''}`}
@@ -235,9 +229,16 @@ export function HomePage(props: {
       <>
         <h3>ようこそ twiarchive へ</h3>
         <p>
+          まずは{' '}
+          <a href="/lists" style="color:var(--accent)">
+            リストを作成
+          </a>{' '}
+          してユーザーを追加すると、ここに投稿が並びます。
+        </p>
+        <p>
           右の「アーカイブを追加」からツイート URL を貼り付けるか、
           <br />
-          <code>/ユーザー名/status/ID</code> にアクセスすると保存できます。
+          <code>/ユーザー名/status/ID</code> にアクセスしても保存できます。
         </p>
       </>
     ) : (
