@@ -26,7 +26,9 @@ import {
   listTimeline,
   removeListMember,
   searchTweets,
+  setListHidden,
 } from './db.js'
+import type { SortOrder } from './db.js'
 import { FxTwitterError } from './fxtwitter.js'
 import { loadTimelineViews, loadTweetView } from './views/model.js'
 import {
@@ -63,6 +65,14 @@ const PAGE_SIZE = 50
 function parseOffset(c: { req: { query: (k: string) => string | undefined } }): number {
   const n = Number(c.req.query('offset'))
   return Number.isInteger(n) && n > 0 ? n : 0
+}
+
+// ?sort= をタイムラインの並び順として読む。不正値は newest (日時降順)。
+function parseSort(c: {
+  req: { query: (k: string) => string | undefined }
+}): SortOrder {
+  const s = c.req.query('sort')
+  return s === 'oldest' || s === 'likes' ? s : 'newest'
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -147,15 +157,44 @@ app.get('/media/*', (c) => {
   })
 })
 
-// ---- ホーム (全体タイムライン) ----
+// ---- ホーム (全体タイムライン + リストタブ) ----
 app.get('/', (c) => {
   const offset = parseOffset(c)
-  const rows = listTimeline({ limit: PAGE_SIZE + 1, offset })
+  const sort = parseSort(c)
+  // ホームのタブにはホーム表示中 (hidden=0) のリストのみ並べる。
+  const lists = listLists({ visibleOnly: true })
+  // ?list= が有効なリスト id ならそのタブを開く。
+  const listParam = c.req.query('list')
+  let activeListId: number | undefined
+  if (listParam && /^\d+$/.test(listParam)) {
+    const id = Number(listParam)
+    if (lists.some((l) => l.id === id)) activeListId = id
+  }
+  const rows =
+    activeListId != null
+      ? listByList(activeListId, { limit: PAGE_SIZE + 1, offset, sort })
+      : listTimeline({ limit: PAGE_SIZE + 1, offset, sort })
   const hasNext = rows.length > PAGE_SIZE
   const views = loadTimelineViews(rows.slice(0, PAGE_SIZE))
-  const nextHref = hasNext ? `/?offset=${offset + PAGE_SIZE}` : undefined
+  // list / sort を保持したまま次ページへ進む URL を組み立てる。
+  const homeHref = (extra: Record<string, string | number>): string => {
+    const p = new URLSearchParams()
+    if (activeListId != null) p.set('list', String(activeListId))
+    if (sort !== 'newest') p.set('sort', sort)
+    for (const [k, v] of Object.entries(extra)) p.set(k, String(v))
+    const qs = p.toString()
+    return qs ? `/?${qs}` : '/'
+  }
+  const nextHref = hasNext ? homeHref({ offset: offset + PAGE_SIZE }) : undefined
   return c.html(
-    <HomePage views={views} authors={listAuthors()} nextHref={nextHref} />,
+    <HomePage
+      views={views}
+      authors={listAuthors()}
+      lists={lists}
+      activeListId={activeListId}
+      sort={sort}
+      nextHref={nextHref}
+    />,
   )
 })
 
@@ -229,6 +268,15 @@ app.get('/lists/:id', (c) => {
 app.post('/lists/:id/delete', (c) => {
   const id = c.req.param('id')
   if (/^\d+$/.test(id)) deleteList(Number(id))
+  return c.redirect('/lists')
+})
+
+// ---- ホーム表示/非表示の切り替え ----
+app.post('/lists/:id/visibility', async (c) => {
+  const id = c.req.param('id')
+  if (!/^\d+$/.test(id)) return c.notFound()
+  const body = await c.req.parseBody()
+  setListHidden(Number(id), body['hidden'] === '1')
   return c.redirect('/lists')
 })
 

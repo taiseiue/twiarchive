@@ -1,7 +1,13 @@
 // ページ単位のコンポーネント (ホーム / 検索 / ユーザー / プロフィール / 詳細 / エラー)。
 
 import type { Child } from 'hono/jsx'
-import type { AuthorListRow, AuthorRow, ListRow, ListWithCount } from '../db.js'
+import type {
+  AuthorListRow,
+  AuthorRow,
+  ListRow,
+  ListWithCount,
+  SortOrder,
+} from '../db.js'
 import type { SyncState } from '../sync.js'
 import { Layout } from './Layout.js'
 import { TweetCard, TweetDetail, Timeline } from './Tweet.js'
@@ -9,16 +15,24 @@ import { avatarSrc, formatCount, mediaUrl, type TweetView } from './model.js'
 import {
   IconBack,
   IconCalendar,
+  IconEye,
+  IconEyeOff,
   IconImage,
   IconList,
   IconRefresh,
   IconSearch,
+  IconSort,
   IconTrash,
   IconVerified,
 } from './icons.js'
 
-// 中央カラムのスティッキーヘッダ。
-function ColHead(props: { title: string; sub?: string; back?: string }) {
+// 中央カラムのスティッキーヘッダ。action を渡すと右端に配置する。
+function ColHead(props: {
+  title: string
+  sub?: string
+  back?: string
+  action?: Child
+}) {
   return (
     <div class="colhead">
       {props.back ? (
@@ -30,6 +44,7 @@ function ColHead(props: { title: string; sub?: string; back?: string }) {
         <h2>{props.title}</h2>
         {props.sub ? <div class="sub">{props.sub}</div> : null}
       </div>
+      {props.action ? <div class="colhead-action">{props.action}</div> : null}
     </div>
   )
 }
@@ -100,24 +115,115 @@ function RightSidebar(props: { authors: AuthorListRow[] }) {
   )
 }
 
+// 並べ替えの選択肢 (ラベルは Twitter 風)。
+const SORT_OPTIONS: { key: SortOrder; label: string }[] = [
+  { key: 'newest', label: '日時降順' },
+  { key: 'oldest', label: '日時昇順' },
+  { key: 'likes', label: 'いいね数順' },
+]
+
+// list / sort を保持したままホームの URL を組み立てる。
+function homeHref(listId: number | undefined, sort: SortOrder): string {
+  const p = new URLSearchParams()
+  if (listId != null) p.set('list', String(listId))
+  if (sort !== 'newest') p.set('sort', sort)
+  const qs = p.toString()
+  return qs ? `/?${qs}` : '/'
+}
+
+// ホーム上部のリストタブ (Twitter のリスト風)。「すべて」+ 各リスト。
+function HomeTabs(props: {
+  lists: ListWithCount[]
+  activeListId?: number
+  sort: SortOrder
+}) {
+  const active = props.activeListId
+  return (
+    <div class="tabbar">
+      <a
+        class={`tab${active == null ? ' active' : ''}`}
+        href={homeHref(undefined, props.sort)}
+      >
+        <span>すべて</span>
+      </a>
+      {props.lists.map((l) => (
+        <a
+          class={`tab${active === l.id ? ' active' : ''}`}
+          href={homeHref(l.id, props.sort)}
+        >
+          <span>{l.name}</span>
+        </a>
+      ))}
+      <a class="tab tab-manage" href="/lists" aria-label="リストを管理">
+        <span>
+          <IconList size={18} />
+        </span>
+      </a>
+    </div>
+  )
+}
+
+// 並べ替えドロップダウン (JS 不要の <details>)。各項目は現在のタブを保ったまま遷移。
+function SortMenu(props: { activeListId?: number; sort: SortOrder }) {
+  const current =
+    SORT_OPTIONS.find((o) => o.key === props.sort) ?? SORT_OPTIONS[0]
+  return (
+    <details class="sortmenu">
+      <summary aria-label="並べ替え">
+        <IconSort size={18} />
+        <span>{current.label}</span>
+      </summary>
+      <div class="sortmenu-list" role="menu">
+        {SORT_OPTIONS.map((o) => (
+          <a
+            class={`sortmenu-item${o.key === props.sort ? ' active' : ''}`}
+            href={homeHref(props.activeListId, o.key)}
+            role="menuitem"
+          >
+            {o.label}
+          </a>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 export function HomePage(props: {
   views: TweetView[]
   authors: AuthorListRow[]
+  lists: ListWithCount[]
+  activeListId?: number
+  sort: SortOrder
   nextHref?: string
 }) {
-  const empty: Child = (
-    <>
-      <h3>ようこそ twiarchive へ</h3>
+  const empty: Child =
+    props.activeListId == null ? (
+      <>
+        <h3>ようこそ twiarchive へ</h3>
+        <p>
+          右の「アーカイブを追加」からツイート URL を貼り付けるか、
+          <br />
+          <code>/ユーザー名/status/ID</code> にアクセスすると保存できます。
+        </p>
+      </>
+    ) : (
       <p>
-        右の「アーカイブを追加」からツイート URL を貼り付けるか、
-        <br />
-        <code>/ユーザー名/status/ID</code> にアクセスすると保存できます。
+        このリストにはまだ投稿がありません。メンバーのプロフィールから追加してください。
       </p>
-    </>
-  )
+    )
   return (
     <Layout title="ホーム / twiarchive" active="home" right={<RightSidebar authors={props.authors} />}>
-      <ColHead title="ホーム" />
+      <ColHead
+        title="ホーム"
+        action={
+          <SortMenu activeListId={props.activeListId} sort={props.sort} />
+        }
+      />
+      <HomeTabs
+        lists={props.lists}
+        activeListId={props.activeListId}
+        sort={props.sort}
+      />
       <Timeline views={props.views} empty={empty} nextHref={props.nextHref} />
     </Layout>
   )
@@ -239,35 +345,64 @@ export function ListsPage(props: { lists: ListWithCount[] }) {
         </div>
       ) : (
         <div>
-          {props.lists.map((l) => (
-            <div class="user-row">
-              <a
-                class="uinfo"
-                href={`/lists/${l.id}`}
-                style="display:block;min-width:0"
-              >
-                <div class="uname">
-                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                    {l.name}
-                  </span>
-                </div>
-                <div class="ucount">{formatCount(l.member_count)} 人</div>
-              </a>
-              <form
-                method="post"
-                action={`/lists/${l.id}/delete`}
-                onsubmit="return confirm('このリストを削除しますか?')"
-              >
-                <button
-                  class="btn sm ghost"
-                  type="submit"
-                  aria-label="リストを削除"
+          {props.lists.map((l) => {
+            const hidden = l.hidden === 1
+            return (
+              <div class="user-row">
+                <a
+                  class="uinfo"
+                  href={`/lists/${l.id}`}
+                  style="display:block;min-width:0"
                 >
-                  <IconTrash size={16} />
-                </button>
-              </form>
-            </div>
-          ))}
+                  <div class="uname">
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      {l.name}
+                    </span>
+                    {hidden ? (
+                      <span class="muted" style="font-size:13px;font-weight:400">
+                        非表示
+                      </span>
+                    ) : null}
+                  </div>
+                  <div class="ucount">{formatCount(l.member_count)} 人</div>
+                </a>
+                <div style="display:flex;gap:8px">
+                  <form method="post" action={`/lists/${l.id}/visibility`}>
+                    <input
+                      type="hidden"
+                      name="hidden"
+                      value={hidden ? '0' : '1'}
+                    />
+                    <button
+                      class="btn sm ghost"
+                      type="submit"
+                      aria-label={
+                        hidden ? 'ホームに表示する' : 'ホームで非表示にする'
+                      }
+                      title={
+                        hidden ? 'ホームに表示する' : 'ホームで非表示にする'
+                      }
+                    >
+                      {hidden ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                    </button>
+                  </form>
+                  <form
+                    method="post"
+                    action={`/lists/${l.id}/delete`}
+                    onsubmit="return confirm('このリストを削除しますか?')"
+                  >
+                    <button
+                      class="btn sm ghost"
+                      type="submit"
+                      aria-label="リストを削除"
+                    >
+                      <IconTrash size={16} />
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </Layout>

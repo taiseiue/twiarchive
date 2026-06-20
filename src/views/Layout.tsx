@@ -85,6 +85,55 @@ const CSS = `
     color: var(--text); transition: background .15s ease;
   }
   .iconbtn:hover { background: var(--hover); }
+  .colhead-action { margin-left: auto; display: flex; align-items: center; }
+
+  /* ---- 並べ替えドロップダウン ---- */
+  .sortmenu { position: relative; }
+  .sortmenu summary {
+    list-style: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 9999px;
+    color: var(--text); font-size: 14px; font-weight: 700;
+    transition: background .15s ease; -webkit-user-select: none; user-select: none;
+  }
+  .sortmenu summary::-webkit-details-marker { display: none; }
+  .sortmenu summary:hover, .sortmenu[open] summary { background: var(--hover); }
+  .sortmenu summary svg { width: 18px; height: 18px; color: var(--muted); flex: 0 0 auto; }
+  .sortmenu-list {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+    min-width: 200px; padding: 6px 0;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: 0 0 18px rgba(0,0,0,0.65);
+  }
+  .sortmenu-item { display: block; padding: 12px 16px; font-size: 15px;
+    font-weight: 700; color: var(--text); transition: background .15s ease; }
+  .sortmenu-item:hover { background: var(--hover); }
+  .sortmenu-item.active { color: var(--accent); }
+
+  /* ---- リストタブ (ホーム) ---- */
+  .tabbar {
+    position: sticky; top: 53px; z-index: 19;
+    display: flex; overflow-x: auto;
+    background: var(--header-blur); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+  }
+  .tabbar::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 1 0 auto; display: flex; align-items: center; justify-content: center;
+    min-height: 53px; padding: 0 16px; white-space: nowrap;
+    color: var(--muted); font-weight: 700;
+    transition: background .15s ease;
+  }
+  .tab:hover { background: var(--hover); }
+  .tab span { position: relative; display: inline-flex; align-items: center;
+    height: 100%; padding: 16px 0; }
+  .tab.active { color: var(--text); }
+  .tab.active span::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 4px; border-radius: 9999px; background: var(--accent);
+  }
+  .tab.tab-manage { flex: 0 0 auto; color: var(--muted); }
 
   /* ---- 右カラム ---- */
   .rightbar {

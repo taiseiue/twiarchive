@@ -79,7 +79,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS lists (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL,
-    created_at  INTEGER NOT NULL
+    created_at  INTEGER NOT NULL,
+    hidden      INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS list_members (
@@ -92,6 +93,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_list_members_author ON list_members (author_id);
 `)
+
+// ---- マイグレーション (既存 DB に不足カラムを追加) ----
+{
+  const cols = db
+    .prepare(`PRAGMA table_info(lists)`)
+    .all() as unknown as { name: string }[]
+  if (!cols.some((c) => c.name === 'hidden')) {
+    db.exec(`ALTER TABLE lists ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`)
+  }
+}
 
 // ---- 行の型 ----
 
@@ -221,6 +232,7 @@ const createListStmt = db.prepare(
   `INSERT INTO lists (name, created_at) VALUES (?, ?)`,
 )
 const deleteListStmt = db.prepare(`DELETE FROM lists WHERE id = ?`)
+const setListHiddenStmt = db.prepare(`UPDATE lists SET hidden = ? WHERE id = ?`)
 const getListStmt = db.prepare(`SELECT * FROM lists WHERE id = ?`)
 const addListMemberStmt = db.prepare(
   `INSERT OR IGNORE INTO list_members (list_id, author_id, added_at) VALUES (?, ?, ?)`,
@@ -336,11 +348,27 @@ export function getAncestors(tweetId: string): TweetRow[] {
   return chain
 }
 
-/** 全体タイムライン / メディア絞り込み。新しい順。 */
+/** タイムラインの並び順。newest=日時降順 / oldest=日時昇順 / likes=いいね数順。 */
+export type SortOrder = 'newest' | 'oldest' | 'likes'
+
+/** SortOrder を ORDER BY 句へ変換する。prefix は別名 (例 't.') を付ける場合に使う。 */
+function orderClause(sort: SortOrder | undefined, prefix = ''): string {
+  switch (sort) {
+    case 'oldest':
+      return `ORDER BY ${prefix}created_timestamp ASC, ${prefix}archived_at ASC`
+    case 'likes':
+      return `ORDER BY ${prefix}likes DESC, ${prefix}created_timestamp DESC`
+    default:
+      return `ORDER BY ${prefix}created_timestamp DESC, ${prefix}archived_at DESC`
+  }
+}
+
+/** 全体タイムライン / メディア絞り込み。既定は新しい順。 */
 export function listTimeline(opts: {
   mediaOnly?: boolean
   limit?: number
   offset?: number
+  sort?: SortOrder
 }): TweetRow[] {
   const limit = opts.limit ?? 50
   const offset = opts.offset ?? 0
@@ -350,7 +378,7 @@ export function listTimeline(opts: {
   const stmt = db.prepare(`
     SELECT * FROM tweets
     ${where}
-    ORDER BY created_timestamp DESC, archived_at DESC
+    ${orderClause(opts.sort)}
     LIMIT ? OFFSET ?
   `)
   return stmt.all(limit, offset) as unknown as TweetRow[]
@@ -421,6 +449,8 @@ export interface ListRow {
   id: number
   name: string
   created_at: number
+  /** 1 ならホームのタブに表示しない。 */
+  hidden: number
 }
 
 export interface ListWithCount extends ListRow {
@@ -442,15 +472,22 @@ export function getList(id: number): ListRow | undefined {
   return getListStmt.get(id) as ListRow | undefined
 }
 
-/** 全リストをメンバー数つきで返す。新しい順。 */
-export function listLists(): ListWithCount[] {
+/** 全リストをメンバー数つきで返す。新しい順。
+ *  visibleOnly を指定するとホーム非表示 (hidden=1) のリストを除外する。 */
+export function listLists(opts: { visibleOnly?: boolean } = {}): ListWithCount[] {
   const stmt = db.prepare(`
     SELECT l.*,
       (SELECT COUNT(*) FROM list_members m WHERE m.list_id = l.id) AS member_count
     FROM lists l
+    ${opts.visibleOnly ? 'WHERE l.hidden = 0' : ''}
     ORDER BY l.created_at DESC
   `)
   return stmt.all() as unknown as ListWithCount[]
+}
+
+/** リストのホーム表示/非表示を切り替える。 */
+export function setListHidden(id: number, hidden: boolean): void {
+  setListHiddenStmt.run(hidden ? 1 : 0, id)
 }
 
 export function addListMember(listId: number, authorId: string): void {
@@ -472,12 +509,12 @@ export function listIdsForAuthor(authorId: string): number[] {
 /** リスト別タイムライン。メンバーのツイートを新しい順で返す。 */
 export function listByList(
   listId: number,
-  opts: { limit?: number; offset?: number } = {},
+  opts: { limit?: number; offset?: number; sort?: SortOrder } = {},
 ): TweetRow[] {
   const stmt = db.prepare(`
     SELECT t.* FROM tweets t
     WHERE t.author_id IN (SELECT author_id FROM list_members WHERE list_id = ?)
-    ORDER BY t.created_timestamp DESC, t.archived_at DESC
+    ${orderClause(opts.sort, 't.')}
     LIMIT ? OFFSET ?
   `)
   return stmt.all(
